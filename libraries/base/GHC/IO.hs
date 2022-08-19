@@ -28,13 +28,14 @@ module GHC.IO (
         unsafePerformIO, unsafeInterleaveIO,
         unsafeDupablePerformIO, unsafeDupableInterleaveIO,
         noDuplicate,
+        annotateIO,
 
         -- To and from ST
         stToIO, ioToST, unsafeIOToST, unsafeSTToIO,
 
         FilePath,
 
-        catch, catchException, catchAny, throwIO,
+        catch, catchNoAnnotation, catchException, catchAny, throwIO,
         mask, mask_, uninterruptibleMask, uninterruptibleMask_,
         MaskingState(..), getMaskingState,
         unsafeUnmask, interruptible,
@@ -47,8 +48,10 @@ import GHC.ST
 import GHC.Exception
 import GHC.Show
 import GHC.IO.Unsafe
+import GHC.Stack.Types ( HasCallStack )
 import Unsafe.Coerce ( unsafeCoerce )
 
+import GHC.Exception.Context ( ExceptionAnnotation )
 import {-# SOURCE #-} GHC.IO.Exception ( userError, IOError )
 
 -- ---------------------------------------------------------------------------
@@ -158,6 +161,10 @@ catchException !io handler = catch io handler
 -- to catch exceptions of any type, see the section \"Catching all
 -- exceptions\" (in "Control.Exception") for an explanation of the problems with doing so.
 --
+-- If the exception handler throws an exception during execution, the
+-- thrown exception will be annotated with a 'WhileHandling'
+-- 'ExceptionAnnotation'.
+--
 -- For catching exceptions in pure (non-'IO') expressions, see the
 -- function 'evaluate'.
 --
@@ -182,10 +189,29 @@ catch   :: Exception e
         -> IO a
 -- See #exceptions_and_strictness#.
 catch (IO io) handler = IO $ catch# io handler'
-    where handler' e = case fromException e of
-                       Just e' -> unIO (handler e')
-                       Nothing -> raiseIO# e
+  where
+    handler' e =
+      case fromException e of
+        Just e' -> unIO (withWhileHandling e (handler e'))
+        Nothing -> raiseIO# e
 
+-- | Catch an exception without adding a 'WhileHandling' 'ExceptionContext'
+-- to any exceptions thrown by the handler. See the documentation of 'catch'
+-- for a detailed description of the semantics of this function.
+--
+-- @since 4.19.0.0
+catchNoAnnotation
+    :: Exception e
+    => IO a         -- ^ The computation to run
+    -> (e -> IO a)  -- ^ Handler to invoke if an exception is raised
+    -> IO a
+-- See #exceptions_and_strictness#.
+catchNoAnnotation (IO io) handler = IO $ catch# io handler'
+  where
+    handler' e =
+      case fromException e of
+        Just e' -> unIO (handler e')
+        Nothing -> raiseIO# e
 
 -- | Catch any 'Exception' type in the 'IO' monad.
 --
@@ -194,7 +220,19 @@ catch (IO io) handler = IO $ catch# io handler'
 -- details.
 catchAny :: IO a -> (forall e . Exception e => e -> IO a) -> IO a
 catchAny !(IO io) handler = IO $ catch# io handler'
-    where handler' (SomeException e) = unIO (handler e)
+  where
+    handler' se@(SomeException e) =
+        unIO (withWhileHandling se (handler e))
+
+withWhileHandling :: SomeException -> IO a -> IO a
+withWhileHandling cause = annotateIO (WhileHandling cause)
+
+-- | Execute an 'IO' action, adding the given 'ExceptionContext'
+-- to any thrown synchronous exceptions.
+annotateIO :: forall e a. ExceptionAnnotation e => e -> IO a -> IO a
+annotateIO ann (IO io) = IO (catch# io handler)
+  where
+    handler se = raiseIO# (addExceptionContext ann se)
 
 -- Using catchException here means that if `m` throws an
 -- 'IOError' /as an imprecise exception/, we will not catch
@@ -235,8 +273,10 @@ mplusIO m n = m `catchException` \ (_ :: IOError) -> n
 -- for a more technical introduction to how GHC optimises around precise vs.
 -- imprecise exceptions.
 --
-throwIO :: Exception e => e -> IO a
-throwIO e = IO (raiseIO# (toException e))
+throwIO :: (HasCallStack, Exception e) => e -> IO a
+throwIO e = do
+    se <- toExceptionWithBacktrace e
+    IO (raiseIO# se)
 
 -- -----------------------------------------------------------------------------
 -- Controlling asynchronous exception delivery
