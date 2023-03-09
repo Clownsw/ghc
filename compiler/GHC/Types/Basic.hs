@@ -38,6 +38,7 @@ module GHC.Types.Basic (
 
         RecFlag(..), isRec, isNonRec, boolToRecFlag,
         Origin(..), isGenerated, DoPmc(..), requiresPMC,
+        GenReason(..), isDoExpansionGenerated, doExpansionOrigin,
 
         RuleName, pprRuleName,
 
@@ -131,6 +132,7 @@ import GHC.Types.SourceText
 import qualified GHC.LanguageExtensions as LangExt
 import {-# SOURCE #-} Language.Haskell.Syntax.Type (PromotionFlag(..), isPromoted)
 import Language.Haskell.Syntax.Basic (Boxity(..), isBoxed, ConTag)
+import {-# SOURCE #-} Language.Haskell.Syntax.Expr (HsDoFlavour)
 
 import Control.DeepSeq ( NFData(..) )
 import Data.Data
@@ -588,16 +590,39 @@ instance Binary RecFlag where
 --
 -- See Note [Generated code and pattern-match checking].
 data Origin = FromSource
-            | Generated DoPmc
+            | Generated GenReason DoPmc
             deriving( Eq, Data )
 
 isGenerated :: Origin -> Bool
 isGenerated Generated {} = True
 isGenerated FromSource   = False
 
+-- | Why was the piece of code generated?
+--   It is useful for generating the right error context
+-- See Part 3 in Note [Expanding HsDo with HsExpansion]
+data GenReason = DoExpansion HsDoFlavour
+               | OtherExpansion
+               deriving (Eq, Data)
+
+instance Outputable GenReason where
+  ppr (DoExpansion{})  = text "DoExpansion"
+  ppr OtherExpansion  = text "OtherExpansion"
+
+-- See Part 3 in Note [Expanding HsDo with HsExpansion]
+isDoExpansionGenerated :: Origin -> Maybe HsDoFlavour
+isDoExpansionGenerated (Generated (DoExpansion f) _) = Just f
+isDoExpansionGenerated _ = Nothing
+
+-- See Part 3 in Note [Expanding HsDo with HsExpansion]
+doExpansionOrigin :: HsDoFlavour -> Origin
+doExpansionOrigin f = Generated (DoExpansion f) DoPmc
+                    -- It is important that we perfrom PMC
+                    -- on the expansions of do statements
+                    -- to get the right warnings
+
 instance Outputable Origin where
   ppr FromSource      = text "FromSource"
-  ppr (Generated pmc) = text "Generated" <+> ppr pmc
+  ppr (Generated reason pmc) = text "Generated" <+> ppr reason <+> ppr pmc
 
 -- | Whether to run pattern-match checks in generated code.
 --
@@ -615,7 +640,7 @@ instance Outputable DoPmc where
 --
 -- See Note [Generated code and pattern-match checking].
 requiresPMC :: Origin -> Bool
-requiresPMC (Generated SkipPmc) = False
+requiresPMC (Generated _ SkipPmc) = False
 requiresPMC _ = True
 
 {- Note [Generated code and pattern-match checking]

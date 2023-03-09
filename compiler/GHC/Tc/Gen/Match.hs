@@ -29,9 +29,11 @@ module GHC.Tc.Gen.Match
    , tcStmtsAndThen
    , tcDoStmts
    , tcBody
+   , tcBodyNC
    , tcDoStmt
    , tcGuardStmt
    , checkArgCounts
+   , expandDoStmts
    )
 where
 
@@ -42,7 +44,10 @@ import {-# SOURCE #-}   GHC.Tc.Gen.Expr( tcSyntaxOp, tcInferRho, tcInferRhoNC
                                        , tcCheckMonoExpr, tcCheckMonoExprNC
                                        , tcCheckPolyExpr )
 
-import GHC.Rename.Utils ( bindLocalNames, isIrrefutableHsPatRn )
+import GHC.Rename.Utils ( bindLocalNames, wrapGenSpan, isIrrefutableHsPatRn,
+                          genHsExpApps, genHsApp, genHsLet,
+                          genHsLamDoExp, genHsCaseAltDoExp,
+                          genWildPat )
 import GHC.Tc.Errors.Types
 import GHC.Tc.Utils.Monad
 import GHC.Tc.Utils.Env
@@ -59,7 +64,7 @@ import GHC.Tc.Types.Evidence
 import GHC.Core.Multiplicity
 import GHC.Core.UsageEnv
 import GHC.Core.TyCon
--- Create chunkified tuple tybes for monad comprehensions
+-- Create chunkified tuple types for monad comprehensions
 import GHC.Core.Make
 
 import GHC.Hs
@@ -70,17 +75,21 @@ import GHC.Builtin.Types.Prim
 import GHC.Utils.Outputable
 import GHC.Utils.Panic
 import GHC.Utils.Misc
-import GHC.Driver.DynFlags ( getDynFlags )
+import GHC.Driver.DynFlags ( DynFlags, getDynFlags )
+import GHC.Driver.Ppr (showPpr)
 
 import GHC.Types.Fixity (LexicalFixity(..))
 import GHC.Types.Name
 import GHC.Types.Id
 import GHC.Types.SrcLoc
+import GHC.Types.Basic
+import qualified GHC.LanguageExtensions as LangExt
 
 import Control.Monad
 import Control.Arrow ( second )
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (mapMaybe)
+import Data.List ((\\))
 
 {-
 ************************************************************************
@@ -262,7 +271,7 @@ tcMatch ctxt pat_tys rhs_ty match
              match@(Match { m_pats = pats, m_grhss = grhss })
       = add_match_ctxt match $
         do { (pats', grhss') <- tcPats (mc_what ctxt) pats pat_tys $
-                                tcGRHSs ctxt grhss rhs_ty
+                                  tcGRHSs ctxt grhss rhs_ty
            ; return (Match { m_ext = noAnn
                            , m_ctxt = mc_what ctxt
                            , m_pats = filter_out_type_pats pats'
@@ -275,7 +284,8 @@ tcMatch ctxt pat_tys rhs_ty match
     add_match_ctxt match thing_inside
         = case mc_what ctxt of
             LamAlt LamSingle -> thing_inside
-            _                -> addErrCtxt (pprMatchInCtxt match) thing_inside
+            StmtCtxt (HsDoStmt{}) -> thing_inside -- this is an expanded do stmt
+            _          -> addErrCtxt (pprMatchInCtxt match) thing_inside
 
     -- We filter out type patterns because we have no use for them in HsToCore.
     -- Type variable bindings have already been converted to HsWrappers.
@@ -341,6 +351,7 @@ tcDoStmts doExpr@(DoExpr _) (L l stmts) res_ty
         ; res_ty <- readExpType res_ty
         ; return (HsDo res_ty doExpr (L l stmts')) }
 
+
 tcDoStmts mDoExpr@(MDoExpr _) (L l stmts) res_ty
   = do  { stmts' <- tcStmts (HsDoStmt mDoExpr) tcDoStmt stmts res_ty
         ; res_ty <- readExpType res_ty
@@ -356,6 +367,12 @@ tcBody :: LHsExpr GhcRn -> ExpRhoType -> TcM (LHsExpr GhcTc)
 tcBody body res_ty
   = do  { traceTc "tcBody" (ppr res_ty)
         ; tcMonoExpr body res_ty
+        }
+
+tcBodyNC :: LHsExpr GhcRn -> ExpRhoType -> TcM (LHsExpr GhcTc)
+tcBodyNC body res_ty
+  = do  { traceTc "tcBodyNC" (ppr res_ty)
+        ; tcMonoExprNC body res_ty
         }
 
 {-
@@ -878,7 +895,6 @@ tcDoStmt _ (LastStmt x body noret _) res_ty thing_inside
   = do { body' <- tcMonoExprNC body res_ty
        ; thing <- thing_inside (panic "tcDoStmt: thing_inside")
        ; return (LastStmt x body' noret noSyntaxExpr, thing) }
-
 tcDoStmt ctxt (BindStmt xbsrn pat rhs) res_ty thing_inside
   = do  {       -- Deal with rebindable syntax:
                 --       (>>=) :: rhs_ty ->_rhs_mult (pat_ty ->_pat_mult new_res_ty) ->_fun_mult res_ty
@@ -917,7 +933,6 @@ tcDoStmt ctxt (ApplicativeStmt _ pairs mb_join) res_ty thing_inside
                \ [rhs_ty] [rhs_mult] -> tcScalingUsage rhs_mult $ tc_app_stmts (mkCheckExpType rhs_ty))
 
         ; return (ApplicativeStmt body_ty pairs' mb_join', thing) }
-
 tcDoStmt _ (BodyStmt _ rhs then_op _) res_ty thing_inside
   = do  {       -- Deal with rebindable syntax;
                 --   (>>) :: rhs_ty -> new_res_ty -> res_ty
@@ -930,7 +945,6 @@ tcDoStmt _ (BodyStmt _ rhs then_op _) res_ty thing_inside
         ; hasFixedRuntimeRep_syntactic (FRRBodyStmt DoNotation 1) rhs_ty
         ; hasFixedRuntimeRep_syntactic (FRRBodyStmt DoNotation 2) new_res_ty
         ; return (BodyStmt rhs_ty rhs' then_op' noSyntaxExpr, thing) }
-
 tcDoStmt ctxt (RecStmt { recS_stmts = L l stmts, recS_later_ids = later_names
                        , recS_rec_ids = rec_names, recS_ret_fn = ret_op
                        , recS_mfix_fn = mfix_op, recS_bind_fn = bind_op })
@@ -1197,3 +1211,347 @@ checkArgCounts matchContext (MG { mg_alts = L _ (match1:matches) })
 
     args_in_match :: (LocatedA (Match GhcRn body1) -> Int)
     args_in_match (L _ (Match { m_pats = pats })) = length pats
+
+{-
+************************************************************************
+*                                                                      *
+\subsection{HsExpansion for Do Statements}
+*                                                                      *
+************************************************************************
+-}
+
+-- | Expand the Do statments so that it works fine with Quicklook impredicativity
+--   See Note [Expanding HsDo with HsExpansion]
+expandDoStmts :: HsDoFlavour -> [ExprLStmt GhcRn] -> TcM (LHsExpr GhcRn)
+expandDoStmts doFlav stmts = do expanded_expr <- expand_do_stmts doFlav stmts
+                                case expanded_expr of
+                                         L _ (XExpr (PopErrCtxt e)) -> return e
+                                         -- The first expanded stmt doesn't need a pop as
+                                         -- it would otherwise pop the "In the expression do ... " from
+                                         -- the error context
+                                         _                          -> return expanded_expr
+
+-- | The main work horse for expanding do block statements into applications of binds and thens
+--   See Note [Expanding HsDo with HsExpansion]
+expand_do_stmts :: HsDoFlavour -> [ExprLStmt GhcRn] -> TcM (LHsExpr GhcRn)
+
+expand_do_stmts ListComp _ = pprPanic "expand_do_stmts: impossible happened. ListComp" empty
+
+expand_do_stmts _ [] = pprPanic "expand_do_stmts: impossible happened. Empty stmts" empty
+
+expand_do_stmts _ (stmt@(L _ (TransStmt {})):_) =
+  pprPanic "expand_do_stmts: TransStmt" $ ppr stmt
+
+expand_do_stmts _ (stmt@(L _ (ParStmt {})):_) =
+  pprPanic "expand_do_stmts: ParStmt" $ ppr stmt
+
+expand_do_stmts _ (stmt@(L _ (ApplicativeStmt{})): _) =
+  pprPanic "expand_do_stmts: Applicative Stmt" $ ppr stmt
+
+expand_do_stmts _ [stmt@(L loc (LastStmt _ (L body_loc body) _ ret_expr))]
+  -- last statement of a list comprehension, needs to explicitly return it
+  -- See `checkLastStmt` and `Syntax.Expr.StmtLR.LastStmt`
+   | NoSyntaxExprRn <- ret_expr
+   -- Last statement is just body if we are not in ListComp context. See Syntax.Expr.LastStmt
+   = do traceTc "expand_do_stmts last" (ppr ret_expr)
+        return $ mkExpandedStmtPopAt body_loc stmt body
+
+   | SyntaxExprRn ret <- ret_expr
+   --
+   --    ------------------------------------------------
+   --               return e  ~~> return e
+   -- to make T18324 work
+   = do traceTc "expand_do_stmts last" (ppr ret_expr)
+        let expansion = genHsApp ret (L body_loc body)
+        return $ mkExpandedStmtPopAt loc stmt expansion
+
+expand_do_stmts do_or_lc (stmt@(L loc (LetStmt _ bs)) : lstmts) =
+--                      stmts ~~> stmts'
+--    ------------------------------------------------
+--       let x = e ; stmts ~~> let x = e in stmts'
+  do expand_stmts <- expand_do_stmts do_or_lc lstmts
+     let expansion = genHsLet bs expand_stmts
+     return $ mkExpandedStmtPopAt loc stmt expansion
+
+expand_do_stmts do_or_lc (stmt@(L loc (BindStmt xbsrn pat e)): lstmts)
+  | SyntaxExprRn bind_op <- xbsrn_bindOp xbsrn
+  , fail_op              <- xbsrn_failOp xbsrn
+-- the pattern binding pat can fail
+-- instead of making a new internal name, the fail block is just an anonymous lambda
+--      stmts ~~> stmt'    f = \case pat -> stmts';
+--                                   _   -> fail "Pattern match failure .."
+--    -------------------------------------------------------
+--       pat <- e ; stmts   ~~> (>>=) e f
+  = do expand_stmts <- expand_do_stmts do_or_lc lstmts
+       failable_expr <- mk_failable_expr do_or_lc pat expand_stmts fail_op
+       let expansion = genHsExpApps bind_op  -- (>>=)
+                       [ e
+                       , failable_expr ]
+       return $ mkExpandedStmtPopAt loc stmt expansion
+
+  | otherwise
+  = pprPanic "expand_do_stmts: The impossible happened, missing bind operator from renamer" (text "stmt" <+> ppr  stmt)
+
+expand_do_stmts do_or_lc (stmt@(L loc (BodyStmt _ e (SyntaxExprRn then_op) _)) : lstmts) =
+-- See Note [BodyStmt]
+--              stmts ~~> stmts'
+--    ----------------------------------------------
+--      e ; stmts ~~> (>>) e stmts'
+  do expand_stmts_expr <- expand_do_stmts do_or_lc lstmts
+     let expansion = genHsExpApps then_op  -- (>>)
+                                  [ e
+                                  , expand_stmts_expr ]
+     return $ mkExpandedStmtPopAt loc stmt expansion
+
+expand_do_stmts do_or_lc
+       ((L loc (RecStmt { recS_stmts = L stmts_loc rec_stmts
+                        , recS_later_ids = later_ids  -- forward referenced local ids
+                        , recS_rec_ids = local_ids     -- ids referenced outside of the rec block
+                        , recS_bind_fn = SyntaxExprRn bind_fun   -- the (>>=) expr
+                        , recS_mfix_fn = SyntaxExprRn mfix_fun   -- the `mfix` expr
+                        , recS_ret_fn  = SyntaxExprRn return_fun -- the `return` expr
+                                                          -- use it explicitly
+                                                          -- at the end of expanded rec block
+                        }))
+         : lstmts) =
+-- See Note [Typing a RecStmt]
+--                                   stmts ~~> stmts'
+--    -------------------------------------------------------------------------------------------
+--      rec { later_ids, local_ids, rec_block } ; stmts
+--                    ~~> (>>=) (mfix (\[ local_only_ids ++ later_ids ]
+--                                           -> do { rec_stmts
+--                                                 ; return (local_only_ids ++ later_ids) } ))
+--                              (\ [ local_only_ids ++ later_ids ] -> stmts')
+  do expand_stmts <- expand_do_stmts do_or_lc lstmts
+     -- NB: No need to wrap the expansion with an ExpandedStmt
+     -- as we want to flatten the rec block statements into its parent do block anyway
+     return $ mkHsApps (wrapGenSpan bind_fun)                           -- (>>=)
+                      [ (wrapGenSpan mfix_fun) `mkHsApp` mfix_expr      -- (mfix (do block))
+                      , genHsLamDoExp do_or_lc [ mkBigLHsVarPatTup all_ids ]     --        (\ x ->
+                                       expand_stmts                  --               stmts')
+                      ]
+  where
+    local_only_ids = local_ids \\ later_ids -- get unique local rec ids;
+                                            -- local rec ids and later ids can overlap
+    all_ids = local_only_ids ++ later_ids   -- put local ids before return ids
+
+    return_stmt  :: ExprLStmt GhcRn
+    return_stmt  = wrapGenSpan $ LastStmt noExtField
+                                     (mkBigLHsTup (map nlHsVar all_ids) noExtField)
+                                     Nothing
+                                     (SyntaxExprRn return_fun)
+    do_stmts     :: XRec GhcRn [ExprLStmt GhcRn]
+    do_stmts     = L stmts_loc $ rec_stmts ++ [return_stmt]
+    do_block     :: LHsExpr GhcRn
+    do_block     = L loc $ HsDo noExtField do_or_lc do_stmts
+    mfix_expr    :: LHsExpr GhcRn
+    mfix_expr    = genHsLamDoExp do_or_lc [ wrapGenSpan (LazyPat noExtField $ mkBigLHsVarPatTup all_ids) ] $ do_block
+                             -- NB: LazyPat because we do not want to eagerly evaluate the pattern
+                             -- and potentially loop forever
+
+expand_do_stmts _ stmts = pprPanic "expand_do_stmts: impossible happened" $ (ppr stmts)
+
+-- checks the pattern `pat`for irrefutability which decides if we need to decorate it with a fail block
+mk_failable_expr :: HsDoFlavour -> LPat GhcRn -> LHsExpr GhcRn -> FailOperator GhcRn -> TcM (LHsExpr GhcRn)
+mk_failable_expr doFlav pat@(L loc _) expr fail_op =
+  do { tc_env <- getGblEnv
+     ; is_strict <- xoptM LangExt.Strict
+     ; irrf_pat <- isIrrefutableHsPatRn' tc_env is_strict pat
+     ; traceTc "mk_fail_expr" (vcat [ text "pat:" <+> ppr pat
+                                    , text "isIrrefutable:" <+> ppr irrf_pat
+                                    ])
+
+     ; if irrf_pat                        -- don't decorate with fail block if
+                                          -- the pattern is irrefutable
+       then return $ genHsLamDoExp doFlav [pat] expr
+       else L loc <$> mk_fail_block doFlav pat expr fail_op
+     }
+
+-- makes the fail block with a given fail_op
+mk_fail_block :: HsDoFlavour -> LPat GhcRn -> LHsExpr GhcRn -> FailOperator GhcRn -> TcM (HsExpr GhcRn)
+mk_fail_block doFlav pat@(L ploc _) e (Just (SyntaxExprRn fail_op)) =
+  do  dflags <- getDynFlags
+      return $ HsLam noAnn LamSingle $ mkMatchGroup (doExpansionOrigin doFlav)     -- \
+                (wrapGenSpan [ genHsCaseAltDoExp doFlav pat e               --  pat -> expr
+                             , fail_alt_case dflags pat fail_op      --  _   -> fail "fail pattern"
+                             ])
+        where
+          fail_alt_case :: DynFlags -> LPat GhcRn -> HsExpr GhcRn -> LMatch GhcRn (LHsExpr GhcRn)
+          fail_alt_case dflags pat fail_op = genHsCaseAltDoExp doFlav genWildPat $
+                                             L ploc (fail_op_expr dflags pat fail_op)
+
+          fail_op_expr :: DynFlags -> LPat GhcRn -> HsExpr GhcRn -> HsExpr GhcRn
+          fail_op_expr dflags pat fail_op
+            = XExpr (ExpandedPat (HsExpanded pat $
+                                  genHsApp fail_op (mk_fail_msg_expr dflags pat)))
+
+          mk_fail_msg_expr :: DynFlags -> LPat GhcRn -> LHsExpr GhcRn
+          mk_fail_msg_expr dflags pat
+            = nlHsLit $ mkHsString $ showPpr dflags $
+              text "Pattern match failure in" <+> pprHsDoFlavour (DoExpr Nothing)
+                   <+> text "at" <+> ppr (getLocA pat)
+
+
+mk_fail_block _ _ _ _ = pprPanic "mk_fail_block: impossible happened" empty
+
+
+{- Note [Expanding HsDo with HsExpansion]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+We expand `do` blocks before typechecking it rather than after type checking it using the
+`HsExpansions` similar to `HsIf` with rebindable syntax and `RecordSyntax`.
+The case in point to implement this is to make impredicativity work well with
+with bind statement expression. See #18324, #23147, #15598, #22086, #22788
+
+Consider a `do` block written by the user
+
+    f = {l0} do {l1} {pl}p <- {l1'}e1
+                {l2} g p
+                {l3} return {l3'}p
+
+The {l1} etc are location/source span information stored in the AST,
+{g1} are compiler generated source spans
+
+The expanded version (performed by expand_do_stmts) looks as follows:
+
+    f = {g1} (>>=) ({l1'} e1) (\ {pl}p ->
+                   {g2} (>>) ({l2} g p)
+                             ({l3} return p))
+
+We do this expansion in Tc.Gen.Match and not in Rename.Expr because we may not have
+all the information populated in the `RnM` monad also, not all the type variables will be
+in scope with -XTypeApplications is turned on (c.f. )
+
+The 3 main points to consider are:
+1. Decorate the expression with a `fail` block if the pattern match is not irrefutable
+2. Generate appropriate warnings for discarded results in a body statement eg. say `g p :: m Int`
+3. Generating appropriate type error messages that blame the correct source spans
+
+Part 1. Decorate failable patterns with fail blocks
+---------------------------------------------------
+If `p` is a pattern that is failable we need to decorate it with a `fail` block.
+For example, the expansion of the `do` block
+
+        do p <- e1
+           e2
+
+(ignoring the location information) will be
+
+        (>>=)
+             (e1)
+             (\case     -- anonymous lambda case
+                 \ p -> e2
+                 _   -> fail "failable pattern p at location")
+
+* Why an anonymous lambda?
+  We need a lambda for the types to match: this expression is a second
+  argument to bind so it needs to be of type `a -> m b`
+  It is anonymous because we do not want to introduce a new name that will
+  never be seen by the user anyway.
+
+* Wrinkle 1: For pattern synonyms (see testcase Typeable1.hs)
+  We always decorate it with a `fail` block as the irrefutable pattern checker returns false
+  But then during desugaring we would then get pattern match redundant warnings. To avoid such
+  spurious warnings we filter out those type patterns that appear in a do expansion generated match
+  in HsToCore.Match.matchWrapper
+
+* Wrinkle 2: `MonadFail` arising due to generated `fail` statements. (See testcase MonadFailErrors.hs)
+  In the error messages we need to say "pattern p" is failable so we need MonadFail and we are
+  deep inside a generated code. So we decorate the fail alternative expression with a `ExpandedPat`
+  that tags the fail expression with the failable pattern.
+
+Part 2. Generate warnings for discarded body statement results
+--------------------------------------------------------------
+If the `do` blocks' body statement is an expression that returns a
+value that is not Unit aka (), then we need to warn the user about discarded
+value when -Wunused-binds flag is turned on
+(See testcase T3263-2.hs)
+
+For example the do expression
+
+    do e1
+       e2
+
+expands to
+
+   >> e1 e2
+
+now if `e1` returns a non-() value then we emit a warning. This check is done during desugaring
+`HsToCore.dsExpr` for the `HsApp` case calls `warnUnusedBindValue`
+The decision function to trigger the warning is if the function is a `>>` and it is a compiler generated
+and e1 is a non-() value
+
+Part 3. Blaming offending source code and Generating Appropriate Error Messages
+-------------------------------------------------------------------------------
+To ensure we correctly track source of the offending user written source code,
+in this case do statements, we need to keep track of
+which statement expansion the typechecker is currently typechecking.
+For this purpose we use the XXExprGhcRn.ExpandedStmt.
+It stores the original statement (with location) and the expanded expression
+
+For example, the do expression
+
+    do e1
+       e2
+
+expands to
+
+   ExpandedExpr
+       (do e1                                                 -- Original
+           e2)                                                -- Statement
+       {ExpandedStmt e1                                       --
+                     ({(>>) e1}                               -- Expanded
+                     <PopErrCtxt> (ExpandedStmt e2            -- Expression
+                                                {e2}))        --
+       }
+
+Whenever the typechecker steps through and `ExpandedStmt`,
+we push the original statement in the error context and typecheck the expanded expression.
+This is similar to vanilla `HsExpansion` and rebindable syntax
+See Note [Rebindable syntax and HsExpansion] in `GHC.Hs.Expr`.
+We associate the application `((>>) (e1))` with `ExpandedStmt` to ensure
+we do not mention compiler generated `(>>)` in
+the error context, rather when we typecheck the application, we push
+the "In the stmt of do block .." in the error context stack. See Note [splitHsApps]
+
+After a statement is typechecked and before moving to the next statement,
+we need to first pop the top of the error context which contains the error message for the previous statement:
+"In the stmt of a do block: e1".
+This is explicitly encoded in the expansion expression using the `XXExprGhcRn.PopErrCtxt`.
+Whenever `tcExpr` encounters a `PopErrCtxt` it calls `popErrCtxt` to pop of the top of error context stack.
+See <PopErrCtxt> in the example above.
+
+
+For example, the do expression with a bind statement
+
+    do p <- e1
+       e2
+
+expands to
+
+   ExpandedExpr
+       (do p <- e1                                                -- Original
+           e2                                                     -- Statement
+       )                                                          --
+       {ExpandedStmt (p <- e1)                                    --
+                     ({(>>=) e1}                                  -- Expanded
+                     <PopErrCtxt> (ExpandedStmt (e2)              -- Expression
+                                                {\ p -> e2}))     --
+       }
+
+
+However, the expansion lambda `(\ p -> e2)` is special as it is generated from a `do` block expansion
+and if type checker error occurs in the pattern `p`, we need to say
+"in a pattern binding in a do block" and not "in a lambda abstraction" (cf. Typeable1.hs)
+hence we use a tag GenReason in `Ghc.Tc.Origin`. When typechecking a `HsLam` in `Tc.Gen.Expr.tcExpr`
+the `match_ctxt` is set to a `StmtCtxt` if `GenOrigin` is a `DoExpansionOrigin`.
+
+Part 4. Compiling `ExpandedStmts` to `ExpansionStmts`
+----------------------------------------------------
+Certain checks like warn unused binds, incomplete pattern match etc (cf. examples)
+are performed on the core rather than on surface syntax. To ensure we produce warnings
+at the appropriate source code, we compile (ExpandedStmt stmt exp) to `ExpansionStmt` stmt exp'
+where exp' is the typechecked version of exp, the expansion expression. This is very similar
+to the original `HsExpansion` flow. The work of convering `ExpandedStmt` to `ExpansionStmt`
+is done by `GHC.Gen.Head.rebuildHsApps`
+
+-}

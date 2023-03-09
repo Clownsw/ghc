@@ -304,7 +304,7 @@ addTickLHsBind (L pos (pat@(PatBind { pat_lhs = lhs
   -- TODO: better name for rhs's for non-simple patterns?
   let name = maybe "(...)" getOccString simplePatId
 
-  (fvs, rhs') <- getFreeVars $ addPathEntry name $ addTickGRHSs False False rhs
+  (fvs, rhs') <- getFreeVars $ addPathEntry name $ addTickGRHSs False False False rhs
   let pat' = pat { pat_rhs = rhs'}
 
   -- Should create ticks here?
@@ -445,8 +445,14 @@ isGoodBreakExpr e = isCallSite e
 isCallSite :: HsExpr GhcTc -> Bool
 isCallSite HsApp{}     = True
 isCallSite HsAppType{} = True
+isCallSite HsCase{}    = True
 isCallSite (XExpr (ExpansionExpr (HsExpanded _ e)))
                        = isCallSite e
+isCallSite (XExpr (ExpansionStmt (HsExpanded (L _ stmt) e)))
+  | BodyStmt{} <- stmt = False
+  | LastStmt{} <- stmt = True
+  | otherwise          = isCallSite e
+
 -- NB: OpApp, SectionL, SectionR are all expanded out
 isCallSite _           = False
 
@@ -519,6 +525,7 @@ addTickHsExpr (HsCase x e mgs) =
                 (addTickLHsExpr e) -- not an EvalInner; e might not necessarily
                                    -- be evaluated.
                 (addTickMatchGroup False mgs)
+
 addTickHsExpr (HsIf x e1 e2 e3) =
         liftM3 (HsIf x)
                 (addBinTickLHsExpr (BinBox CondBinBox) e1)
@@ -526,20 +533,13 @@ addTickHsExpr (HsIf x e1 e2 e3) =
                 (addTickLHsExprOptAlt True e3)
 addTickHsExpr (HsMultiIf ty alts)
   = do { let isOneOfMany = case alts of [_] -> False; _ -> True
-       ; alts' <- mapM (traverse $ addTickGRHS isOneOfMany False) alts
+       ; alts' <- mapM (traverse $ addTickGRHS isOneOfMany False False) alts
        ; return $ HsMultiIf ty alts' }
 addTickHsExpr (HsLet x tkLet binds tkIn e) =
         bindLocals (collectLocalBinders CollNoDictBinders binds) $ do
           binds' <- addTickHsLocalBinds binds -- to think about: !patterns.
           e' <- addTickLHsExprLetBody e
           return (HsLet x tkLet binds' tkIn e')
-addTickHsExpr (HsDo srcloc cxt (L l stmts))
-  = do { (stmts', _) <- addTickLStmts' forQual stmts (return ())
-       ; return (HsDo srcloc cxt (L l stmts')) }
-  where
-        forQual = case cxt of
-                    ListComp -> Just $ BinBox QualBinBox
-                    _        -> Nothing
 addTickHsExpr (ExplicitList ty es)
   = liftM2 ExplicitList (return ty) (mapM (addTickLHsExpr) es)
 
@@ -593,6 +593,9 @@ addTickHsExpr (XExpr (WrapExpr (HsWrap w e))) =
 addTickHsExpr (XExpr (ExpansionExpr (HsExpanded a b))) =
         liftM (XExpr . ExpansionExpr . HsExpanded a) $
               (addTickHsExpr b)
+addTickHsExpr (XExpr (ExpansionStmt (HsExpanded a b))) =
+        liftM (XExpr . ExpansionStmt . HsExpanded a) $
+              (addTickHsExpr b)
 
 addTickHsExpr e@(XExpr (ConLikeTc {})) = return e
   -- We used to do a freeVar on a pat-syn builder, but actually
@@ -605,6 +608,15 @@ addTickHsExpr (XExpr (HsTick t e)) =
 addTickHsExpr (XExpr (HsBinTick t0 t1 e)) =
         liftM (XExpr . HsBinTick t0 t1) (addTickLHsExprNever e)
 
+
+addTickHsExpr (HsDo srcloc cxt (L l stmts))
+  = do { (stmts', _) <- addTickLStmts' forQual stmts (return ())
+       ; return (HsDo srcloc cxt (L l stmts')) }
+  where
+        forQual = case cxt of
+                    ListComp -> Just $ BinBox QualBinBox
+                    _        -> Nothing
+
 addTickTupArg :: HsTupArg GhcTc -> TM (HsTupArg GhcTc)
 addTickTupArg (Present x e)  = do { e' <- addTickLHsExpr e
                                   ; return (Present x e') }
@@ -613,40 +625,44 @@ addTickTupArg (Missing ty) = return (Missing ty)
 
 addTickMatchGroup :: Bool{-is lambda-} -> MatchGroup GhcTc (LHsExpr GhcTc)
                   -> TM (MatchGroup GhcTc (LHsExpr GhcTc))
-addTickMatchGroup is_lam mg@(MG { mg_alts = L l matches }) = do
+addTickMatchGroup is_lam mg@(MG { mg_alts = L l matches, mg_ext = ctxt }) = do
   let isOneOfMany = matchesOneOfMany matches
-  matches' <- mapM (traverse (addTickMatch isOneOfMany is_lam)) matches
+      isDoExp     = isJust (isDoExpansionGenerated $ mg_origin ctxt)
+  matches' <- mapM (traverse (addTickMatch isOneOfMany is_lam isDoExp)) matches
   return $ mg { mg_alts = L l matches' }
 
-addTickMatch :: Bool -> Bool -> Match GhcTc (LHsExpr GhcTc)
+addTickMatch :: Bool -> Bool -> Bool {-Is Do Expanion-} ->  Match GhcTc (LHsExpr GhcTc)
              -> TM (Match GhcTc (LHsExpr GhcTc))
-addTickMatch isOneOfMany isLambda match@(Match { m_pats = pats
-                                               , m_grhss = gRHSs }) =
+addTickMatch isOneOfMany isLambda isDoExp match@(Match { m_pats = pats
+                                                       , m_grhss = gRHSs }) =
   bindLocals (collectPatsBinders CollNoDictBinders pats) $ do
-    gRHSs' <- addTickGRHSs isOneOfMany isLambda gRHSs
+    gRHSs' <- addTickGRHSs isOneOfMany isLambda isDoExp gRHSs
     return $ match { m_grhss = gRHSs' }
 
-addTickGRHSs :: Bool -> Bool -> GRHSs GhcTc (LHsExpr GhcTc)
+addTickGRHSs :: Bool -> Bool -> Bool -> GRHSs GhcTc (LHsExpr GhcTc)
              -> TM (GRHSs GhcTc (LHsExpr GhcTc))
-addTickGRHSs isOneOfMany isLambda (GRHSs x guarded local_binds) =
+addTickGRHSs isOneOfMany isLambda isDoExp (GRHSs x guarded local_binds) =
   bindLocals binders $ do
     local_binds' <- addTickHsLocalBinds local_binds
-    guarded' <- mapM (traverse (addTickGRHS isOneOfMany isLambda)) guarded
+    guarded' <- mapM (traverse (addTickGRHS isOneOfMany isLambda isDoExp)) guarded
     return $ GRHSs x guarded' local_binds'
   where
     binders = collectLocalBinders CollNoDictBinders local_binds
 
-addTickGRHS :: Bool -> Bool -> GRHS GhcTc (LHsExpr GhcTc)
+addTickGRHS :: Bool -> Bool -> Bool -> GRHS GhcTc (LHsExpr GhcTc)
             -> TM (GRHS GhcTc (LHsExpr GhcTc))
-addTickGRHS isOneOfMany isLambda (GRHS x stmts expr) = do
+addTickGRHS isOneOfMany isLambda isDoExp (GRHS x stmts expr) = do
   (stmts',expr') <- addTickLStmts' (Just $ BinBox $ GuardBinBox) stmts
-                        (addTickGRHSBody isOneOfMany isLambda expr)
+                        (addTickGRHSBody isOneOfMany isLambda isDoExp expr)
   return $ GRHS x stmts' expr'
 
-addTickGRHSBody :: Bool -> Bool -> LHsExpr GhcTc -> TM (LHsExpr GhcTc)
-addTickGRHSBody isOneOfMany isLambda expr@(L pos e0) = do
+addTickGRHSBody :: Bool -> Bool -> Bool -> LHsExpr GhcTc -> TM (LHsExpr GhcTc)
+addTickGRHSBody isOneOfMany isLambda isDoExp expr@(L pos e0) = do
   d <- getDensity
   case d of
+    TickForBreakPoints
+      | XExpr (ExpansionStmt (HsExpanded (L _ LastStmt{}) _)) <- e0 -> addTickLHsExprRHS expr
+      | isDoExp -> addTickLHsExprNever expr
     TickForCoverage  -> addTickLHsExprOptAlt isOneOfMany expr
     TickAllFunctions | isLambda ->
        addPathEntry "\\" $

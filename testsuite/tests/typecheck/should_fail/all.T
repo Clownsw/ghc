@@ -146,7 +146,7 @@ test('tcfail160', normal, compile_fail, [''])
 test('tcfail161', normal, compile_fail, [''])
 test('tcfail162', normal, compile_fail, [''])
 test('tcfail164', normal, compile_fail, [''])
-test('tcfail165', normal, compile_fail, [''])
+test('tcfail165', normal, compile, [''])
 test('tcfail166', normal, compile_fail, [''])
 test('tcfail167', normal, compile_fail, ['-Werror'])
 test('tcfail168', normal, compile_fail, [''])
@@ -704,3 +704,8 @@ test('T22478c', normal, compile_fail, [''])
 test('T23776', normal, compile, ['']) # to become an error in GHC 9.12
 test('T17940', normal, compile_fail, [''])
 test('ErrorIndexLinks', normal, compile_fail, ['-fprint-error-index-links=always'])
+
+# all the various do expansion fail messages
+test('DoExpansion1', normal, compile, ['-fdefer-type-errors'])
+test('DoExpansion2', normal, compile, ['-fdefer-type-errors'])
+test('DoExpansion3', normal, compile, ['-fdefer-type-errors'])

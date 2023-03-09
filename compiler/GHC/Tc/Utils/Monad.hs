@@ -1269,7 +1269,8 @@ updCtxt ctxt env
   | otherwise = addLclEnvErrCtxt ctxt env
 
 popErrCtxt :: TcM a -> TcM a
-popErrCtxt = updLclEnv (\env -> setLclEnvErrCtxt (pop $ getLclEnvErrCtxt env) env)
+popErrCtxt thing_inside = updLclEnv (\env -> setLclEnvErrCtxt (pop $ getLclEnvErrCtxt env) env) $
+                          thing_inside
            where
              pop []       = []
              pop (_:msgs) = msgs
@@ -1299,6 +1300,7 @@ setCtLocM (CtLoc { ctl_env = lcl }) thing_inside
                      $ setLclEnvErrCtxt (ctl_ctxt lcl)
                      $ setLclEnvBinderStack (ctl_bndrs lcl)
                      $ env) thing_inside
+
 
 
 {- *********************************************************************

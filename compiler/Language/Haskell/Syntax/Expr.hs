@@ -45,6 +45,7 @@ import Data.Maybe
 import Data.List.NonEmpty ( NonEmpty )
 import GHC.Types.Name.Reader
 
+
 {- Note [RecordDotSyntax field updates]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The extensions @OverloadedRecordDot@ @OverloadedRecordUpdate@ together
@@ -1618,6 +1619,7 @@ data HsDoFlavour
   | GhciStmtCtxt                     -- ^A command-line Stmt in GHCi pat <- rhs
   | ListComp
   | MonadComp
+  deriving (Eq, Data)
 
 qualifiedDoModuleName_maybe :: HsStmtContext p -> Maybe ModuleName
 qualifiedDoModuleName_maybe ctxt = case ctxt of
