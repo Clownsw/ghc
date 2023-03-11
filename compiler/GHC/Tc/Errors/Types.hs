@@ -4122,6 +4122,14 @@ data TcRnMessage where
   -}
   TcRnIllegalTypeExpr :: TcRnMessage
 
+  {-| TcRnDefaultedExceptionContext is a warning that is triggered when the
+      backward-compatibility logic solving for implicit ExceptionContext
+      constraints fires.
+
+      Test cases: TODO
+  -}
+  TcRnDefaultedExceptionContext :: CtLoc -> TcRnMessage
+
   deriving Generic
 
 

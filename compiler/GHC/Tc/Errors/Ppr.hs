@@ -1794,6 +1794,17 @@ instance Diagnostic TcRnMessage where
     TcRnNonCanonicalDefinition reason inst_ty
       -> mkSimpleDecorated $
          pprNonCanonicalDefinition inst_ty reason
+    TcRnDefaultedExceptionContext ct_loc ->
+      mkSimpleDecorated $ vcat [ header, warning, proposal ]
+      where
+        header, warning, proposal :: SDoc
+        header
+          = vcat [ text "Solving for an implicit ExceptionContext constraint"
+                 , nest 2 $ pprCtOrigin (ctLocOrigin ct_loc) <> text "." ]
+        warning
+          = vcat [ text "Future versions of GHC will turn this warning into an error." ]
+        proposal
+          = vcat [ text "See GHC Proposal #330." ]
     TcRnImplicitImportOfPrelude
       -> mkSimpleDecorated $
          text "Module" <+> quotes (text "Prelude") <+> text "implicitly imported."
@@ -2430,6 +2441,8 @@ instance Diagnostic TcRnMessage where
       -> WarningWithFlag Opt_WarnNonCanonicalMonoidInstances
     TcRnNonCanonicalDefinition (NonCanonicalMonad _) _
       -> WarningWithFlag Opt_WarnNonCanonicalMonadInstances
+    TcRnDefaultedExceptionContext{}
+      -> WarningWithoutFlag --WarningWithFlag TODO
     TcRnImplicitImportOfPrelude {}
       -> WarningWithFlag Opt_WarnImplicitPrelude
     TcRnMissingMain {}
@@ -3084,6 +3097,8 @@ instance Diagnostic TcRnMessage where
       -> noHints
     TcRnNonCanonicalDefinition reason _
       -> suggestNonCanonicalDefinition reason
+    TcRnDefaultedExceptionContext _
+      -> noHints
     TcRnImplicitImportOfPrelude {}
       -> noHints
     TcRnMissingMain {}
