@@ -84,7 +84,6 @@ data Setting = CursesIncludeDir
 data ToolchainSetting
     = ToolchainSetting_OtoolCommand
     | ToolchainSetting_InstallNameToolCommand
-    | ToolchainSetting_TouchCommand
     | ToolchainSetting_LlcCommand
     | ToolchainSetting_OptCommand
     | ToolchainSetting_DistroMinGW
@@ -133,7 +132,6 @@ settingsFileSetting :: ToolchainSetting -> Action String
 settingsFileSetting key = lookupSystemConfig $ case key of
     ToolchainSetting_OtoolCommand           -> "settings-otool-command"
     ToolchainSetting_InstallNameToolCommand -> "settings-install_name_tool-command"
-    ToolchainSetting_TouchCommand           -> "settings-touch-command"
     ToolchainSetting_LlcCommand             -> "settings-llc-command"
     ToolchainSetting_OptCommand             -> "settings-opt-command"
     ToolchainSetting_DistroMinGW            -> "settings-use-distro-mingw" -- ROMES:TODO: This option doesn't seem to be in ghc-toolchain yet. It corresponds to EnableDistroToolchain
