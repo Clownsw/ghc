@@ -770,6 +770,8 @@ iselExpr64 (CmmMachOp (MO_Not _) [e1]) = do
                      ]
    return (RegCode64 code rhi rlo)
 
+iselExpr64 (CmmRegOff r i) = iselExpr64 (mangleIndexTree r i)
+
 iselExpr64 expr
    = do
       platform <- getPlatform
