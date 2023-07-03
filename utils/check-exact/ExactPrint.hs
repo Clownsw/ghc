@@ -68,7 +68,6 @@ import Data.Maybe ( isJust, mapMaybe )
 import Data.Void
 
 import Orphans ()
-import qualified Orphans as Orphans
 
 import Lookup
 import Utils
@@ -179,7 +178,6 @@ data EPState = EPState
                                           -- Annotation
              , uExtraDP :: !(Maybe Anchor) -- ^ Used to anchor a
                                              -- list
-
              , pAcceptSpan :: Bool -- ^ When we have processed an
                                    -- entry of EpaDelta, accept the
                                    -- next `EpaSpan` start as the
@@ -281,8 +279,7 @@ instance (HasTrailing a) => HasEntry (EpAnn a) where
   fromAnn (EpAnn anc a cs) = mkEntry anc (trailing a) cs
   fromAnn EpAnnNotUsed = NoEntryVal
 
--- instance (HasTrailing a) => HasEntry (EpAnnS a) where
---   fromAnn (EpAnnS anc a cs) = mkEntry anc (trailing a) cs
+-- ---------------------------------------------------------------------
 
 instance HasTrailing NoEpAnns where
   trailing _ = []
@@ -321,7 +318,7 @@ instance HasTrailing AnnPragma where
   setTrailing a _ = a
 
 instance HasTrailing AnnContext where
-  trailing (AnnContext ma opens closes)
+  trailing (AnnContext ma _opens _closes)
     = case ma of
       Just (UnicodeSyntax, r) -> [AddDarrowUAnn r]
       Just (NormalSyntax,  r) -> [AddDarrowAnn r]
@@ -385,110 +382,6 @@ instance HasTrailing AnnsModule where
 instance HasTrailing NameAnn where
   trailing a = nann_trailing a
   setTrailing a ts = a { nann_trailing = ts }
-
--- ---------------------------------------------------------------------
-
--- instance HasTrailing NoEpAnns where
---   trailing _ = []
---   setTrailing a _ = a
-
--- instance HasTrailing EpaLocation where
---   trailing _ = []
---   setTrailing a _ = a
-
--- instance HasTrailing AddEpAnn where
---   trailing _ = []
---   setTrailing a _ = a
-
--- instance HasTrailing [AddEpAnn] where
---   trailing _ = []
---   setTrailing a _ = a
-
--- instance HasTrailing (AddEpAnn, AddEpAnn) where
---   trailing _ = []
---   setTrailing a _ = a
-
--- instance HasTrailing EpAnnSumPat where
---   trailing _ = []
---   setTrailing a _ = a
-
--- instance HasTrailing AnnList where
---   trailing a = al_trailing a
---   setTrailing a ts = a { al_trailing = ts }
-
--- instance HasTrailing AnnListItem where
---   trailing a = lann_trailing a
---   setTrailing a ts = a { lann_trailing = ts }
-
--- instance HasTrailing AnnPragma where
---   trailing _ = []
---   setTrailing a _ = a
-
--- instance HasTrailing AnnContext where
---   trailing (AnnContext ma _opens _closes)
---     = case ma of
---       Just (UnicodeSyntax, r) -> [AddDarrowUAnn r]
---       Just (NormalSyntax,  r) -> [AddDarrowAnn r]
---       Nothing -> []
-
---   setTrailing a [AddDarrowUAnn r] = a {ac_darrow = Just (UnicodeSyntax, r)}
---   setTrailing a [AddDarrowAnn r] = a{ac_darrow = Just (NormalSyntax, r)}
---   setTrailing a [] = a{ac_darrow = Nothing}
---   setTrailing a ts = error $ "Cannot setTrailing " ++ showAst ts ++ " for " ++ showAst a
-
-
--- instance HasTrailing AnnParen where
---   trailing _ = []
---   setTrailing a _ = a
-
--- instance HasTrailing AnnsIf where
---   trailing _ = []
---   setTrailing a _ = a
-
--- instance HasTrailing EpAnnHsCase where
---   trailing _ = []
---   setTrailing a _ = a
-
--- instance HasTrailing AnnFieldLabel where
---   trailing _ = []
---   setTrailing a _ = a
-
--- instance HasTrailing AnnProjection where
---   trailing _ = []
---   setTrailing a _ = a
-
--- instance HasTrailing AnnExplicitSum where
---   trailing _ = []
---   setTrailing a _ = a
-
--- instance HasTrailing EpAnnUnboundVar where
---   trailing _ = []
---   setTrailing a _ = a
-
--- instance HasTrailing GrhsAnn where
---   trailing _ = []
---   setTrailing a _ = a
-
--- instance HasTrailing AnnSig where
---   trailing _ = []
---   setTrailing a _ = a
-
--- instance HasTrailing HsRuleAnn where
---   trailing _ = []
---   setTrailing a _ = a
-
--- instance HasTrailing EpAnnImportDecl where
---   trailing _ = []
---   setTrailing a _ = a
-
--- instance HasTrailing AnnsModule where
---   -- Report none, as all are used internally
---   trailing _ = []
---   setTrailing a _ = a
-
--- instance HasTrailing NameAnn where
---   trailing a = nann_trailing a
---   setTrailing a ts = a { nann_trailing = ts }
 
 -- ---------------------------------------------------------------------
 
@@ -1481,12 +1374,10 @@ markAnnListA :: (Monad m, Monoid w)
 markAnnListA EpAnnNotUsed action = do
   action EpAnnNotUsed
 markAnnListA an action = do
-  debugM $ "markAnnListA: an=" ++ showAst an
   an0 <- markLensMAA an lal_open
   an1 <- markEpAnnAllL an0 lal_rest AnnSemi
   (an2, r) <- action an1
   an3 <- markLensMAA an2 lal_close
-  debugM $ "markAnnListA: an3=" ++ showAst an
   return (an3, r)
 
 -- ---------------------------------------------------------------------
@@ -3409,7 +3300,7 @@ instance (ExactPrint body) => ExactPrint (HsRecFields GhcPs body) where
 -- ---------------------------------------------------------------------
 
 instance (ExactPrint body)
-    => ExactPrint (HsFieldBind (LocatedAn NoEpAnns (FieldOcc GhcPs)) body) where
+    => ExactPrint (HsFieldBind (LocatedA (FieldOcc GhcPs)) body) where
   getAnnotationEntry x = fromAnn (hfbAnn x)
   setAnnotationAnchor (HsFieldBind an f arg isPun) anc ts cs = (HsFieldBind (setAnchorEpa an anc ts cs) f arg isPun)
   exact (HsFieldBind an f arg isPun) = do
@@ -3458,7 +3349,7 @@ instance (ExactPrint body)
 -- ---------------------------------------------------------------------
 
 instance (ExactPrint (LocatedA body))
-    => ExactPrint (HsFieldBind (LocatedAn NoEpAnns (AmbiguousFieldOcc GhcPs)) (LocatedA body)) where
+    => ExactPrint (HsFieldBind (LocatedA (AmbiguousFieldOcc GhcPs)) (LocatedA body)) where
   getAnnotationEntry x = fromAnn (hfbAnn x)
   setAnnotationAnchor (HsFieldBind an f arg isPun) anc ts cs = (HsFieldBind (setAnchorEpa an anc ts cs) f arg isPun)
   exact (HsFieldBind an f arg isPun) = do
@@ -4364,11 +4255,7 @@ instance (ExactPrint a) => ExactPrint (LocatedC a) where
     opens' <- mapM (markKwA AnnOpenP) opens
     a' <- markAnnotated a
     closes' <- mapM (markKwA AnnCloseP) closes
-    ma' <- case ma of
-      Just (UnicodeSyntax, r) -> Just . (UnicodeSyntax,) <$> markKwA AnnDarrowU r
-      Just (NormalSyntax,  r) -> Just . (NormalSyntax,) <$> markKwA AnnDarrow  r
-      Nothing -> pure Nothing
-    return (L (SrcSpanAnn (EpAnn anc (AnnContext ma' opens' closes') cs) l) a')
+    return (L (SrcSpanAnn (EpAnn anc (AnnContext ma opens' closes') cs) l) a')
 
 -- ---------------------------------------------------------------------
 
@@ -5223,8 +5110,8 @@ getPriorEndD = gets dPriorEndPosition
 getAnchorU :: (Monad m, Monoid w) => EP w m RealSrcSpan
 getAnchorU = gets uAnchorSpan
 
-getAcceptSpan ::(Monad m, Monoid w) => EP w m Bool
-getAcceptSpan = gets pAcceptSpan
+-- getAcceptSpan ::(Monad m, Monoid w) => EP w m Bool
+-- getAcceptSpan = gets pAcceptSpan
 
 setAcceptSpan ::(Monad m, Monoid w) => Bool -> EP w m ()
 setAcceptSpan f =
