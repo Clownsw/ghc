@@ -658,6 +658,7 @@ iselExpr64 (CmmMachOp (MO_Shl _) [e1,e2]) = do
                        JXX EQQ b,
                        MOV II32 (OpReg rlo) (OpReg rhi),
                        XOR II32 (OpReg rlo) (OpReg rlo),
+                       JXX ALWAYS b,
                        NEWBLOCK b
                      ]
    return (RegCode64 code rhi rlo)
@@ -679,6 +680,7 @@ iselExpr64 (CmmMachOp (MO_S_Shr _) [e1,e2]) = do
                        JXX EQQ b,
                        MOV II32 (OpReg rhi) (OpReg rlo),
                        SAR II32 (OpImm (ImmInt 31)) (OpReg rhi),
+                       JXX ALWAYS b,
                        NEWBLOCK b
                      ]
    return (RegCode64 code rhi rlo)
@@ -700,6 +702,7 @@ iselExpr64 (CmmMachOp (MO_U_Shr _) [e1,e2]) = do
                        JXX EQQ b,
                        MOV II32 (OpReg rhi) (OpReg rlo),
                        XOR II32 (OpReg rhi) (OpReg rhi),
+                       JXX ALWAYS b,
                        NEWBLOCK b
                      ]
    return (RegCode64 code rhi rlo)
