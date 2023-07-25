@@ -79,6 +79,7 @@ _tt = testOneFile changers "/home/alanz/mysrc/git.haskell.org/worktree/master/_b
  -- "../../testsuite/tests/ghc-api/exactprint/RmTypeSig2.hs" (Just rmTypeSig2)
  -- "../../testsuite/tests/ghc-api/exactprint/AddHiding1.hs" (Just addHiding1)
  -- "../../testsuite/tests/ghc-api/exactprint/AddHiding2.hs" (Just addHiding2)
+ -- "../../testsuite/tests/ghc-api/exactprint/AddClassMethod.hs" (Just addClassMethod)
  -- "../../testsuite/tests/ghc-api/annotations/CommentsTest.hs" Nothing
  -- "../../testsuite/tests/hiefile/should_compile/Constructors.hs" Nothing
  -- "../../testsuite/tests/hiefile/should_compile/Scopes.hs" Nothing
@@ -451,7 +452,7 @@ changeLetIn1 _libdir parsed
              [l2,_l1] = map wrapDecl $ bagToList bagDecls
              bagDecls' = listToBag $ concatMap decl2Bind [l2]
              (L (SrcSpanAnn _ le) e) = expr
-             a = (SrcSpanAnn (EpAnn (Anchor (realSrcSpan le) (MovedAnchor (SameLine 1))) noAnn emptyComments) le)
+             a = (SrcSpanAnn (EpAnn (Anchor (realSrcSpan le) (MovedAnchor (SameLine 1) [])) noAnn emptyComments) le)
              expr' = L a e
              tkIn' = L (TokenLoc (EpaDelta (DifferentLine 1 0) [])) HsTok
          in (HsLet an tkLet
@@ -478,10 +479,12 @@ changeAddDecl1 libdir top = do
 changeAddDecl2 :: Changer
 changeAddDecl2 libdir top = do
   Right decl <- withDynFlags libdir (\df -> parseDecl df "<interactive>" "nn = n2")
-  let decl' = setEntryDP (makeDeltaAst decl) (DifferentLine 2 0)
+  -- let decl' = setEntryDP (makeDeltaAst decl) (DifferentLine 2 0)
+  let decl' = setEntryDP decl (DifferentLine 2 0)
 
   let (p',_,_) = runTransform doAddDecl
-      doAddDecl = everywhereM (mkM replaceTopLevelDecls) (makeDeltaAst top)
+      -- doAddDecl = everywhereM (mkM replaceTopLevelDecls) (makeDeltaAst top)
+      doAddDecl = everywhereM (mkM replaceTopLevelDecls) top
       replaceTopLevelDecls :: ParsedSource -> Transform ParsedSource
       replaceTopLevelDecls m = insertAtEnd m decl'
   return p'
@@ -525,7 +528,7 @@ changeLocalDecls libdir (L l p) = do
             os' = setEntryDP os (DifferentLine 2 0)
         let sortKey = captureOrderBinds decls
         let (EpAnn anc (AnnList (Just (Anchor anc2 _)) a b c dd) cs) = van
-        let van' = (EpAnn anc (AnnList (Just (Anchor anc2 (MovedAnchor (DifferentLine 1 5)))) a b c dd) cs)
+        let van' = (EpAnn anc (AnnList (Just (Anchor anc2 (MovedAnchor (DifferentLine 1 5) []))) a b c dd) cs)
         -- let (EpAnn anc (AnnList (Just _) a b c dd) cs) = van
         -- let van' = (EpAnn anc (AnnList (Just (EpaDelta (DifferentLine 1 5) [])) a b c dd) cs)
         let binds' = (HsValBinds van'
@@ -552,8 +555,8 @@ changeLocalDecls2 libdir (L l p) = do
                         -> Transform (LMatch GhcPs (LHsExpr GhcPs))
       replaceLocalBinds (L lm (Match ma mln pats (GRHSs _ rhs EmptyLocalBinds{}))) = do
         newSpan <- uniqueSrcSpanT
-        let anc = (Anchor (rs newSpan) (MovedAnchor (DifferentLine 1 3)))
-        let anc2 = (Anchor (rs newSpan) (MovedAnchor (DifferentLine 1 5)))
+        let anc = (Anchor (rs newSpan) (MovedAnchor (DifferentLine 1 3) []))
+        let anc2 = (Anchor (rs newSpan) (MovedAnchor (DifferentLine 1 5) []))
         -- let anc = (EpaDelta (DifferentLine 1 3) [])
         -- let anc2 = (EpaDelta (DifferentLine 1 5) [])
         let an = EpAnn anc
@@ -602,7 +605,8 @@ addLocaLDecl1 libdir top = do
   Right (L ld (ValD _ decl)) <- withDynFlags libdir (\df -> parseDecl df "decl" "nn = 2")
   let decl' = setEntryDP (L ld decl) (DifferentLine 1 5)
       doAddLocal = do
-        let lp = makeDeltaAst top
+        -- let lp = makeDeltaAst top
+        let lp = top
         (de1:d2:d3:_) <- hsDecls lp
         (de1'',d2') <- balanceComments de1 d2
         (de1',_) <- modifyValD (getLocA de1'') de1'' $ \_m d -> do
@@ -641,7 +645,8 @@ addLocaLDecl3 libdir top = do
   Right newDecl <- withDynFlags libdir (\df -> parseDecl df "decl" "nn = 2")
   let
       doAddLocal = do
-         let lp = makeDeltaAst top
+         -- let lp = makeDeltaAst top
+         let lp = top
          (de1:d2:_) <- hsDecls lp
          (de1'',d2') <- balanceComments de1 d2
 
@@ -849,7 +854,8 @@ rmDecl7 :: Changer
 rmDecl7 _libdir top = do
   let
       doRmDecl = do
-         let lp = makeDeltaAst top
+         -- let lp = makeDeltaAst top
+         let lp = top
          tlDecs <- hsDecls lp
          [s1,de1,d2,d3] <- balanceCommentsList tlDecs
 
@@ -918,7 +924,8 @@ addHiding1 _libdir (L l p) = do
                                               [])
                                        emptyComments) l0) [v1,v2]
           imp1' = imp1 { ideclImportList = Just (EverythingBut,impHiding)}
-          p' = p { hsmodImports = [L li imp1',imp2]}
+          imp2' = setEntryDP imp2 (DifferentLine 2 0)
+          p' = p { hsmodImports = [L li imp1',imp2']}
         return (L l p')
 
   let (lp',_,_w) = runTransform doTransform
@@ -930,7 +937,8 @@ addHiding1 _libdir (L l p) = do
 addHiding2 :: Changer
 addHiding2 _libdir top = do
   let doTransform = do
-        let (L l p) = makeDeltaAst top
+        -- let (L l p) = makeDeltaAst top
+        let (L l p) = top
         l1 <- uniqueSrcSpanT
         l2 <- uniqueSrcSpanT
         let
@@ -963,12 +971,12 @@ addClassMethod :: Changer
 addClassMethod libdir lp = do
   Right sig  <- withDynFlags libdir (\df -> parseDecl df "sig"  "nn :: Int")
   Right decl <- withDynFlags libdir (\df -> parseDecl df "decl" "nn = 2")
-  let decl' = setEntryDP decl (DifferentLine 1 2)
-  let  sig' = setEntryDP sig  (DifferentLine 2 2)
+  let decl' = setEntryDP decl (DifferentLine 1 3)
+  let  sig' = setEntryDP sig  (DifferentLine 2 3)
   let doAddMethod = do
         [cd] <- hsDecls lp
         (f1:f2s:f2d:_) <- hsDecls cd
-        let  f2s' = setEntryDP f2s  (DifferentLine 2 2)
+        let  f2s' = setEntryDP f2s  (DifferentLine 2 3)
         cd' <- replaceDecls cd [f1, sig', decl', f2s', f2d]
         replaceDecls lp [cd']
 
