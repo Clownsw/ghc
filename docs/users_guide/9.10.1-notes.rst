@@ -18,6 +18,15 @@ Language
 
   This feature is guarded behind :extension:`RequiredTypeArguments` and :extension:`ExplicitNamespaces`.
 
+- Using ``forall`` as an identifier is now a parse error, as forewarned
+  by :ghc-flag:`-Wforall-identifier`::
+
+    forall :: (Variable a, MonadQSAT s m) => m a
+    -- parse error on input ‘forall’
+
+  Library authors are advised to use a different name for their functions,
+  such as ``forAll``, ``for_all``, or ``forall_``.
+
 Compiler
 ~~~~~~~~
 
@@ -53,6 +62,9 @@ Compiler
 
 - Defaulting plugins can now propose solutions to entangled sets of type variables. This allows defaulting
   of multi-parameter type classes. See :ghc-ticket:`23832`.
+
+- The :ghc-flag:`-Wforall-identifier` flag is now deprecated and removed from :ghc-flag:`-Wdefault`,
+  as ``forall`` is no longer parsed as an identifier.
 
 GHCi
 ~~~~

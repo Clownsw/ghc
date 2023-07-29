@@ -1026,7 +1026,7 @@ mkRuleTyVarBndrs = fmap cvt_one
 checkRuleTyVarBndrNames :: [LHsTyVarBndr flag GhcPs] -> P ()
 checkRuleTyVarBndrNames = mapM_ (check . fmap hsTyVarName)
   where check (L loc (Unqual occ)) =
-          when (occNameFS occ `elem` [fsLit "forall",fsLit "family",fsLit "role"])
+          when (occNameFS occ `elem` [fsLit "family",fsLit "role"])
             (addFatalError $ mkPlainErrorMsgEnvelope (locA loc) $
                (PsErrParseErrorOnInput occ))
         check _ = panic "checkRuleTyVarBndrNames"
