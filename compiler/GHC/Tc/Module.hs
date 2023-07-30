@@ -153,6 +153,7 @@ import GHC.Types.Annotations
 import GHC.Types.SrcLoc
 import GHC.Types.SourceFile
 import GHC.Types.PkgQual
+import GHC.Types.Unique.Set (getUniqSet)
 import qualified GHC.LanguageExtensions as LangExt
 
 import GHC.Unit.External
@@ -1604,7 +1605,8 @@ rnTopSrcDecls group
    }
 
 tcTopSrcDecls :: HsGroup GhcRn -> TcM (TcGblEnv, TcLclEnv)
-tcTopSrcDecls (HsGroup { hs_tyclds = tycl_decls,
+tcTopSrcDecls (HsGroup { hs_ext = all_bndrs,
+                         hs_tyclds = tycl_decls,
                          hs_derivds = deriv_decls,
                          hs_fords  = foreign_decls,
                          hs_defds  = default_decls,
@@ -1616,19 +1618,23 @@ tcTopSrcDecls (HsGroup { hs_tyclds = tycl_decls,
                 -- The latter come in via tycl_decls
         traceTc "Tc2 (src)" empty ;
 
+                -- See Note [Demotion of unqualified variables] (W1) in GHC.Rename.Env
+        let { no_terms :: TcM a -> TcM a
+            ; no_terms = tcExtendKindEnv (mkTermVarPromErrEnv all_bndrs) } ;
+
                 -- Source-language instances, including derivings,
                 -- and import the supporting declarations
         traceTc "Tc3" empty ;
         (tcg_env, inst_infos, th_bndrs,
          XValBindsLR (NValBinds deriv_binds deriv_sigs))
-            <- tcTyClsInstDecls tycl_decls deriv_decls val_binds ;
+            <- no_terms $ tcTyClsInstDecls tycl_decls deriv_decls val_binds ;
 
         updLclCtxt (\tcl_env -> tcl_env { tcl_th_bndrs = th_bndrs `plusNameEnv` tcl_th_bndrs tcl_env }) $
         setGblEnv tcg_env       $ do {
 
                 -- Foreign import declarations next.
         traceTc "Tc4" empty ;
-        (fi_ids, fi_decls, fi_gres) <- tcForeignImports foreign_decls ;
+        (fi_ids, fi_decls, fi_gres) <- no_terms $ tcForeignImports foreign_decls ;
         tcExtendGlobalValEnv fi_ids     $ do {
 
                 -- Default declarations
@@ -1642,14 +1648,14 @@ tcTopSrcDecls (HsGroup { hs_tyclds = tycl_decls,
                 -- may be defined in terms of the former. (For instance,
                 -- the bindings produced in a Data instance.)
         traceTc "Tc5" empty ;
-        tc_envs <- tcTopBinds val_binds val_sigs;
+        tc_envs <- tcTopBinds no_terms val_binds val_sigs;
         restoreEnvs tc_envs $ do {
 
                 -- Now GHC-generated derived bindings, generics, and selectors
                 -- Do not generate warnings from compiler-generated code;
                 -- hence the use of discardWarnings
         tc_envs@(tcg_env, tcl_env)
-            <- discardWarnings (tcTopBinds deriv_binds deriv_sigs) ;
+            <- discardWarnings (tcTopBinds no_terms deriv_binds deriv_sigs) ;
         restoreEnvs tc_envs $ do {  -- Environment doesn't change now
 
                 -- Second pass over class and instance declarations,
@@ -1698,6 +1704,12 @@ tcTopSrcDecls (HsGroup { hs_tyclds = tycl_decls,
     }}}}}}
 
 tcTopSrcDecls _ = panic "tcTopSrcDecls: ValBindsIn"
+
+mkTermVarPromErrEnv :: NameSet -> NameEnv TcTyThing
+mkTermVarPromErrEnv all_bndrs = prom_err_env
+  where
+    prom_err_env = APromotionErr TermVariablePE <$ getUniqSet val_names
+    val_names = filterNameSet (isVarName <||> isFieldName) all_bndrs
 
 ---------------------------
 tcTyClsInstDecls :: [TyClGroup GhcRn]

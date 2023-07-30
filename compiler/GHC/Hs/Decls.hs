@@ -132,6 +132,7 @@ import GHC.Data.Bag
 import GHC.Data.Maybe
 import Data.Data (Data)
 import Data.Foldable (toList)
+import qualified Data.Semigroup as S
 
 {-
 ************************************************************************
@@ -193,15 +194,18 @@ partitionBindsAndSigs = go
 instance Outputable (DocDecl name) where
   ppr _ = text "<document comment>"
 
-type instance XCHsGroup (GhcPass _) = NoExtField
+type instance XCHsGroup GhcPs = ()
+type instance XCHsGroup GhcRn = NameSet
+type instance XCHsGroup GhcTc = NameSet
+
 type instance XXHsGroup (GhcPass _) = DataConCantHappen
 
 
-emptyGroup, emptyRdrGroup, emptyRnGroup :: HsGroup (GhcPass p)
+emptyGroup, emptyRdrGroup, emptyRnGroup :: Monoid (XCHsGroup (GhcPass p)) => HsGroup (GhcPass p)
 emptyRdrGroup = emptyGroup { hs_valds = emptyValBindsIn }
 emptyRnGroup  = emptyGroup { hs_valds = emptyValBindsOut }
 
-emptyGroup = HsGroup { hs_ext = noExtField,
+emptyGroup = HsGroup { hs_ext = mempty,
                        hs_tyclds = [],
                        hs_derivds = [],
                        hs_fixds = [], hs_defds = [], hs_annds = [],
@@ -222,10 +226,12 @@ hsGroupTopLevelFixitySigs (HsGroup{ hs_fixds = fixds, hs_tyclds = tyclds }) =
                 , L loc (FixSig _ sig) <- sigs
                 ]
 
-appendGroups :: HsGroup (GhcPass p) -> HsGroup (GhcPass p)
+appendGroups :: Semigroup (XCHsGroup (GhcPass p))
+             => HsGroup (GhcPass p) -> HsGroup (GhcPass p)
              -> HsGroup (GhcPass p)
 appendGroups
     HsGroup {
+        hs_ext    = ext1,
         hs_valds  = val_groups1,
         hs_splcds = spliceds1,
         hs_tyclds = tyclds1,
@@ -238,6 +244,7 @@ appendGroups
         hs_ruleds = rulds1,
         hs_docs   = docs1 }
     HsGroup {
+        hs_ext    = ext2,
         hs_valds  = val_groups2,
         hs_splcds = spliceds2,
         hs_tyclds = tyclds2,
@@ -251,7 +258,7 @@ appendGroups
         hs_docs   = docs2 }
   =
     HsGroup {
-        hs_ext    = noExtField,
+        hs_ext    = ext1 S.<> ext2,
         hs_valds  = val_groups1 `plusHsValBinds` val_groups2,
         hs_splcds = spliceds1 ++ spliceds2,
         hs_tyclds = tyclds1 ++ tyclds2,

@@ -866,7 +866,7 @@ bindSigTyVarsFV tvs thing_inside
 ---------------
 bindHsQTyVars :: forall a b.
                  HsDocContext
-              -> Maybe a            -- Just _  => an associated type decl
+              -> Maybe (a, [Name])  -- Just _  => an associated type decl
               -> FreeKiTyVars       -- Kind variables from scope
               -> LHsQTyVars GhcPs
               -> (LHsQTyVars GhcRn -> FreeKiTyVars -> RnM (b, FreeVars))
@@ -887,12 +887,17 @@ bindHsQTyVars doc mb_assoc body_kv_occs hsq_bndrs thing_inside
 
        ; let -- See Note [bindHsQTyVars examples] for what
              -- all these various things are doing
-             bndrs, implicit_kvs :: [LocatedN RdrName]
+             bndrs, all_implicit_kvs :: [LocatedN RdrName]
              bndrs        = map hsLTyVarLocName hs_tv_bndrs
-             implicit_kvs = filterFreeVarsToBind bndrs $
+             all_implicit_kvs = filterFreeVarsToBind bndrs $
                bndr_kv_occs ++ body_kv_occs
              body_remaining = filterFreeVarsToBind bndr_kv_occs $
               filterFreeVarsToBind bndrs body_kv_occs
+
+       ; implicit_kvs <-
+          case mb_assoc of
+            Nothing -> filterInScopeM all_implicit_kvs
+            Just (_, cls_tvs) -> filterInScopeNonClassM cls_tvs all_implicit_kvs
 
        ; traceRn "checkMixedVars3" $
            vcat [ text "bndrs"   <+> ppr hs_tv_bndrs
@@ -1216,14 +1221,14 @@ new_tv_name_rn (Just _) cont lrdr@(L _ rdr)
 Section 7.3: https://github.com/ghc-proposals/ghc-proposals/blob/master/proposals/0281-visible-forall.rst#73implicit-quantification
 
 Its purpose is to notify users when implicit quantification occurs that would
-stop working under RequiredTypeArguments (a future GHC extension). Example:
+stop working under RequiredTypeArguments. Example:
 
    a = 42
    id :: a -> a
 
 As it stands, the `a` in the signature `id :: a -> a` is considered free and
 leads to implicit quantification, as if the user wrote `id :: forall a. a -> a`.
-Under RequiredTypeArguments it will capture the term-level variable `a` (bound by `a = 42`),
+Under RequiredTypeArguments it captures the term-level variable `a` (bound by `a = 42`),
 leading to a type error.
 
 `warn_term_var_capture` detects this by demoting the namespace of the
@@ -1806,22 +1811,66 @@ type checking. While viable, this would mean we'd end up accepting this:
 -- Note [Ordering of implicit variables].
 type FreeKiTyVars = [LocatedN RdrName]
 
+data TermVariableCapture =
+    CaptureTermVars
+  | DontCaptureTermVars
+
+getTermVariableCapture :: RnM TermVariableCapture
+getTermVariableCapture
+  = do { required_type_arguments <- xoptM LangExt.RequiredTypeArguments
+       ; let tvc | required_type_arguments = CaptureTermVars
+                 | otherwise               = DontCaptureTermVars
+       ; return tvc }
+
 -- | Filter out any type and kind variables that are already in scope in the
 -- the supplied LocalRdrEnv. Note that this includes named wildcards, which
 -- look like perfectly ordinary type variables at this point.
-filterInScope :: LocalRdrEnv -> FreeKiTyVars -> FreeKiTyVars
-filterInScope rdr_env = filterOut (inScope rdr_env . unLoc)
+filterInScope :: TermVariableCapture -> (GlobalRdrEnv, LocalRdrEnv) -> FreeKiTyVars -> FreeKiTyVars
+filterInScope tvc envs = filterOut (inScope tvc envs . unLoc)
+
+-- | Like 'filterInScopeM', but keep parent class variables intact.
+-- Used with associated types.
+filterInScopeNonClass :: [Name] -> TermVariableCapture -> (GlobalRdrEnv, LocalRdrEnv) -> FreeKiTyVars -> FreeKiTyVars
+filterInScopeNonClass cls_tvs tvc envs = filterOut (in_scope_non_class . unLoc)
+  where
+    in_scope_non_class :: RdrName -> Bool
+    in_scope_non_class rdr
+      | occName rdr `elemOccSet` cls_tvs_set = False
+      | otherwise = inScope tvc envs rdr
+
+    cls_tvs_set :: OccSet
+    cls_tvs_set = mkOccSet (map nameOccName cls_tvs)
 
 -- | Filter out any type and kind variables that are already in scope in the
 -- the environment's LocalRdrEnv. Note that this includes named wildcards,
 -- which look like perfectly ordinary type variables at this point.
 filterInScopeM :: FreeKiTyVars -> RnM FreeKiTyVars
 filterInScopeM vars
-  = do { rdr_env <- getLocalRdrEnv
-       ; return (filterInScope rdr_env vars) }
+  = do { tvc <- getTermVariableCapture
+       ; envs <- getRdrEnvs
+       ; return (filterInScope tvc envs vars) }
 
-inScope :: LocalRdrEnv -> RdrName -> Bool
-inScope rdr_env rdr = rdr `elemLocalRdrEnv` rdr_env
+-- | Like 'filterInScopeM', but keep parent class variables intact.
+-- Used with associated types.
+filterInScopeNonClassM :: [Name] -> FreeKiTyVars -> RnM FreeKiTyVars
+filterInScopeNonClassM cls_tvs vars
+  = do { tvc <- getTermVariableCapture
+       ; envs <- getRdrEnvs
+       ; return (filterInScopeNonClass cls_tvs tvc envs vars) }
+
+inScope :: TermVariableCapture -> (GlobalRdrEnv, LocalRdrEnv) -> RdrName -> Bool
+inScope tvc (gbl, lcl) rdr =
+  case tvc of
+    DontCaptureTermVars -> rdr_in_scope
+    CaptureTermVars     -> rdr_in_scope || demoted_rdr_in_scope
+  where
+    rdr_in_scope, demoted_rdr_in_scope :: Bool
+    rdr_in_scope         = elem_lcl rdr
+    demoted_rdr_in_scope = maybe False (elem_lcl <||> elem_gbl) (demoteRdrNameTv rdr)
+
+    elem_lcl, elem_gbl :: RdrName -> Bool
+    elem_lcl name = elemLocalRdrEnv name lcl
+    elem_gbl name = (not . null) (lookupGRE gbl (LookupRdrName name (RelevantGREsFOS WantBoth)))
 
 extract_tyarg :: LHsTypeArg GhcPs -> FreeKiTyVars -> FreeKiTyVars
 extract_tyarg (HsValArg ty) acc = extract_lty ty acc

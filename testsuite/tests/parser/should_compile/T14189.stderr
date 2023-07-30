@@ -4,7 +4,12 @@
 (Just
  ((,,,)
   (HsGroup
-   (NoExtField)
+   {NameSet:
+    [{Name: T14189.F}
+    ,{Name: T14189.MT}
+    ,{Name: T14189.MyType}
+    ,{Name: T14189.NT}
+    ,{Name: T14189.f}]}
    (XValBindsLR
     (NValBinds
      []

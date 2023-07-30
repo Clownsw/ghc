@@ -4,7 +4,19 @@
 (Just
  ((,,,)
   (HsGroup
-   (NoExtField)
+   {NameSet:
+    [{Name: DumpRenamedAst.C}
+    ,{Name: DumpRenamedAst.F}
+    ,{Name: DumpRenamedAst.F1}
+    ,{Name: DumpRenamedAst.Length}
+    ,{Name: DumpRenamedAst.MkT}
+    ,{Name: DumpRenamedAst.Nat}
+    ,{Name: DumpRenamedAst.Nat}
+    ,{Name: DumpRenamedAst.Peano}
+    ,{Name: DumpRenamedAst.Succ}
+    ,{Name: DumpRenamedAst.T}
+    ,{Name: DumpRenamedAst.Zero}
+    ,{Name: DumpRenamedAst.main}]}
    (XValBindsLR
     (NValBinds
      [((,)

@@ -211,7 +211,7 @@ rnSrcDecls group@(HsGroup { hs_valds   = val_decls,
 
    last_tcg_env <- getGblEnv ;
    -- (I) Compute the results and return
-   let {rn_group = HsGroup { hs_ext     = noExtField,
+   let {rn_group = HsGroup { hs_ext     = all_bndrs,
                              hs_valds   = rn_val_decls,
                              hs_splcds  = rn_splice_decls,
                              hs_tyclds  = rn_tycl_decls,
@@ -854,10 +854,11 @@ rnDataFamInstDecl atfi (DataFamInstDecl { dfid_eqn =
 
 -- Rename associated type family decl in class
 rnATDecls :: Name      -- Class
+          -> [Name]
           -> [LFamilyDecl GhcPs]
           -> RnM ([LFamilyDecl GhcRn], FreeVars)
-rnATDecls cls at_decls
-  = rnList (rnFamDecl (Just cls)) at_decls
+rnATDecls cls cls_tvs at_decls
+  = rnList (rnFamDecl (Just (cls, cls_tvs))) at_decls
 
 rnATInstDecls :: (AssocTyFamInfo ->           -- The function that renames
                   decl GhcPs ->               -- an instance. rnTyFamInstDecl
@@ -1745,7 +1746,7 @@ rnTyClDecl (ClassDecl { tcdLayout = layout,
              { (context', cxt_fvs) <- rnMaybeContext cls_doc context
              ; fds'  <- rnFds fds
                          -- The fundeps have no free variables
-             ; (ats', fv_ats) <- rnATDecls cls' ats
+             ; (ats', fv_ats) <- rnATDecls cls' (hsAllLTyVarNames tyvars') ats
              ; let fvs = cxt_fvs     `plusFV`
                          fv_ats
              ; return ((tyvars', context', fds', ats'), fvs) }
@@ -2192,7 +2193,8 @@ rnLDerivStrategy doc mds thing_inside
       (thing, fvs) <- thing_inside
       pure (ds, thing, fvs)
 
-rnFamDecl :: Maybe Name -- Just cls => this FamilyDecl is nested
+rnFamDecl :: Maybe (Name, [Name])
+                        -- Just (cls, cls_tvs) => this FamilyDecl is nested
                         --             inside an *class decl* for cls
                         --             used for associated types
           -> FamilyDecl GhcPs
