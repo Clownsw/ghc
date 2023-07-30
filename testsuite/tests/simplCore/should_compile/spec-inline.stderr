@@ -1,7 +1,7 @@
 
 ==================== Tidy Core ====================
 Result size of Tidy Core
-  = {terms: 150, types: 60, coercions: 0, joins: 0/0}
+  = {terms: 152, types: 62, coercions: 0, joins: 0/2}
 
 -- RHS size: {terms: 1, types: 0, coercions: 0, joins: 0/0}
 Roman.$trModule4 :: GHC.Prim.Addr#
@@ -56,20 +56,24 @@ Roman.foo3
   = Control.Exception.Base.patError @GHC.Types.LiftedRep @() lvl
 
 Rec {
--- RHS size: {terms: 40, types: 5, coercions: 0, joins: 0/0}
+-- RHS size: {terms: 42, types: 6, coercions: 0, joins: 0/1}
 Roman.foo_$s$wgo [Occ=LoopBreaker]
   :: GHC.Prim.Int# -> GHC.Prim.Int# -> GHC.Prim.Int#
 [GblId, Arity=2, Str=<A><L>, Unf=OtherCon []]
 Roman.foo_$s$wgo
   = \ (sc :: GHC.Prim.Int#) (sc1 :: GHC.Prim.Int#) ->
+      let {
+        m [Dmd=A] :: GHC.Prim.Int#
+        [LclId]
+        m = GHC.Prim.*# 7# sc } in
       case GHC.Prim.<=# sc1 0# of {
         __DEFAULT ->
           case GHC.Prim.<# sc1 100# of {
             __DEFAULT ->
               case GHC.Prim.<# sc1 500# of {
                 __DEFAULT ->
-                  Roman.foo_$s$wgo (GHC.Prim.*# 14# sc) (GHC.Prim.-# sc1 1#);
-                1# -> Roman.foo_$s$wgo (GHC.Prim.*# 7# sc) (GHC.Prim.-# sc1 3#)
+                  Roman.foo_$s$wgo (GHC.Prim.*# 2# m) (GHC.Prim.-# sc1 1#);
+                1# -> Roman.foo_$s$wgo m (GHC.Prim.-# sc1 3#)
               };
             1# -> Roman.foo_$s$wgo sc (GHC.Prim.-# sc1 2#)
           };
@@ -77,7 +81,7 @@ Roman.foo_$s$wgo
       }
 end Rec }
 
--- RHS size: {terms: 61, types: 18, coercions: 0, joins: 0/0}
+-- RHS size: {terms: 61, types: 19, coercions: 0, joins: 0/1}
 Roman.$wgo [InlPrag=[2]] :: Maybe Int -> Maybe Int -> GHC.Prim.Int#
 [GblId[StrictWorker([!, !])],
  Arity=2,
@@ -91,8 +95,12 @@ Roman.$wgo
         Nothing -> case Roman.foo3 of {};
         Just x ->
           case x of { GHC.Types.I# ipv ->
+          let {
+            m [Dmd=A] :: GHC.Prim.Int#
+            [LclId]
+            m = GHC.Prim.*# 7# ipv } in
           case u of {
-            Nothing -> Roman.foo_$s$wgo (GHC.Prim.*# 7# ipv) 10#;
+            Nothing -> Roman.foo_$s$wgo m 10#;
             Just n ->
               case n of { GHC.Types.I# x2 ->
               case GHC.Prim.<=# x2 0# of {
@@ -101,8 +109,8 @@ Roman.$wgo
                     __DEFAULT ->
                       case GHC.Prim.<# x2 500# of {
                         __DEFAULT ->
-                          Roman.foo_$s$wgo (GHC.Prim.*# 14# ipv) (GHC.Prim.-# x2 1#);
-                        1# -> Roman.foo_$s$wgo (GHC.Prim.*# 7# ipv) (GHC.Prim.-# x2 3#)
+                          Roman.foo_$s$wgo (GHC.Prim.*# 2# m) (GHC.Prim.-# x2 1#);
+                        1# -> Roman.foo_$s$wgo m (GHC.Prim.-# x2 3#)
                       };
                     1# -> Roman.foo_$s$wgo ipv (GHC.Prim.-# x2 2#)
                   };
