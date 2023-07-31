@@ -90,7 +90,7 @@ _tt = testOneFile changers "/home/alanz/mysrc/git.haskell.org/ghc/_build/stage1/
  -- "../../testsuite/tests/parser/should_compile/T14189.hs" Nothing
 
  -- "../../testsuite/tests/printer/AnnotationLet.hs" Nothing
- "../../testsuite/tests/printer/AnnotationTuple.hs" Nothing
+ -- "../../testsuite/tests/printer/AnnotationTuple.hs" Nothing
  -- "../../testsuite/tests/printer/Ppr001.hs" Nothing
  -- "../../testsuite/tests/printer/Ppr002.hs" Nothing
  -- "../../testsuite/tests/printer/Ppr002a.hs" Nothing

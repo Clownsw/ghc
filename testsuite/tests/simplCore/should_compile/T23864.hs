@@ -59,7 +59,7 @@ insertComments ::
 insertComments cond inserter epa@EpAnn {..} = do
   coms <- drainComments cond
   pure $ epa {comments = inserter comments coms}
-insertComments _ _ EpAnnNotUsed = pure EpAnnNotUsed
+-- insertComments _ _ EpAnnNotUsed = pure EpAnnNotUsed
 
 insertPriorComments :: EpAnnComments -> [LEpaComment] -> EpAnnComments
 insertPriorComments (EpaComments prior) cs =
