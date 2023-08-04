@@ -667,20 +667,24 @@ all2Prefix :: (a -> b -> Bool) -> [a] -> [b] -> Bool
 -- ^ `all2Prefix p xs ys` is a fused version of `and $ zipWith2 p xs ys`.
 -- So if one list is shorter than the other, `p` is assumed to be `True` for the
 -- suffix.
-all2Prefix p xs ys = go xs ys
-  where go (x:xs) (y:ys) = p x y && go xs ys
-        go _      _      = True
-{-# INLINABLE all2Prefix #-}
+all2Prefix p = foldr (\x go ys' -> case ys' of (y:ys'') -> p x y && go ys''; _ -> True) (\_ -> True)
+{-# INLINE all2Prefix #-}
+-- all2Prefix p xs ys = go xs ys
+--   where go (x:xs) (y:ys) = p x y && go xs ys
+--         go _      _      = True
+-- {-# INLINABLE all2Prefix #-}
 
 all3Prefix :: (a -> b -> c -> Bool) -> [a] -> [b] -> [c] -> Bool
 -- ^ `all3Prefix p xs ys zs` is a fused version of `and $ zipWith3 p xs ys zs`.
 -- So if one list is shorter than the others, `p` is assumed to be `True` for
 -- the suffix.
-all3Prefix p xs ys zs = go xs ys zs
-  where
-    go (x:xs) (y:ys) (z:zs) = p x y z && go xs ys zs
-    go _      _      _      = True
-{-# INLINABLE all3Prefix #-}
+all3Prefix p xs ys zs = foldr (\y go xs' zs' -> case (xs',zs') of (x:xs'',z:zs'') -> p x y z && go xs'' zs''; _ -> False) (\_ _ -> True) ys xs zs
+{-# INLINE all3Prefix #-}
+-- all3Prefix p xs ys zs = go xs ys zs
+--   where
+--     go (x:xs) (y:ys) (z:zs) = p x y z && go xs ys zs
+--     go _      _      _      = True
+-- {-# INLINABLE all3Prefix #-}
 
 -- Count the number of times a predicate is true
 

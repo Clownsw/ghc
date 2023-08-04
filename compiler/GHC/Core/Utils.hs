@@ -1982,7 +1982,7 @@ exprIsHNFlike is_con is_con_unf e
        , Just str_marks <- dataConRepStrictness_maybe dc  -- with strict fields
        , assert (val_args `leLength` str_marks) True
        , val_args `equalLength` str_marks                 -- in a saturated app
-       = all3Prefix check_field str_marks val_arg_tys val_args
+       = all3Prefix check_field str_marks (mapMaybe anonPiTyBinderType_maybe  (collectPiTyBinders (idType id))) val_args
 
        -- Now all applications except saturated DataCon apps with strict fields
        |  idArity id > length val_args
@@ -1992,14 +1992,14 @@ exprIsHNFlike is_con is_con_unf e
             -- Hence we only need to check unlifted val_args here.
             -- NB: We assume that CONLIKEs are lazy, which is their entire
             --     point.
-       = all2Prefix check_arg val_arg_tys val_args
+       = all2Prefix check_arg (mapMaybe anonPiTyBinderType_maybe  (collectPiTyBinders (idType id))) val_args
 
        | otherwise
        = False
        where
-         fun_ty      = idType id
-         (arg_tys,_) = splitPiTys fun_ty
-         val_arg_tys = mapMaybe anonPiTyBinderType_maybe  arg_tys
+         -- fun_ty  = idType id
+         -- arg_tys = collectPiTyBinders fun_ty
+         -- val_arg_tys = mapMaybe anonPiTyBinderType_maybe  arg_tys
          -- val_arg_tys = map exprType val_args, but much less costly.
          -- The obvious definition regresses T16577 by 30% so we don't do it.
 
@@ -2013,6 +2013,7 @@ exprIsHNFlike is_con is_con_unf e
            = isMarkedStrict str || mightBeUnliftedType a_ty ==> is_hnf_like a
          a ==> b = not a || b
          infixr 1 ==>
+{-# INLINE exprIsHNFlike #-}
 
 {-
 Note [exprIsHNF Tick]
