@@ -57,7 +57,7 @@ _tt = testOneFile changers "/home/alanz/mysrc/git.haskell.org/ghc/_build/stage1/
  -- "../../testsuite/tests/ghc-api/exactprint/WhereIn4.hs" (Just changeWhereIn4)
  -- "../../testsuite/tests/ghc-api/exactprint/AddClassMethod.hs" (Just addClassMethod)
  -- "../../testsuite/tests/ghc-api/exactprint/AddDecl1.hs" (Just changeAddDecl1)
- -- "../../testsuite/tests/ghc-api/exactprint/AddDecl2.hs" (Just changeAddDecl2)
+ "../../testsuite/tests/ghc-api/exactprint/AddDecl2.hs" (Just changeAddDecl2)
  -- "../../testsuite/tests/ghc-api/exactprint/AddDecl3.hs" (Just changeAddDecl3)
  -- "../../testsuite/tests/ghc-api/exactprint/LocalDecls.hs" (Just changeLocalDecls)
  -- "../../testsuite/tests/ghc-api/exactprint/LocalDecls2.hs" (Just changeLocalDecls2)
@@ -455,8 +455,8 @@ changeLetIn1 _libdir parsed
          let (HsValBinds x (ValBinds xv bagDecls sigs)) = localDecls
              [l2,_l1] = map wrapDecl $ bagToList bagDecls
              bagDecls' = listToBag $ concatMap decl2Bind [l2]
-             (L (SrcSpanAnn _ le) e) = expr
-             a = (SrcSpanAnn (EpAnn (EpaDelta (SameLine 1) []) noAnn emptyComments) le)
+             (L _ e) = expr
+             a = EpAnn (EpaDelta (SameLine 1) []) noAnn emptyComments
              expr' = L a e
              tkIn' = L (TokenLoc (EpaDelta (DifferentLine 1 0) [])) HsTok
          in (HsLet an tkLet
@@ -487,7 +487,6 @@ changeAddDecl2 libdir top = do
   -- let decl' = setEntryDP decl (DifferentLine 2 0)
 
   let (p',_,_) = runTransform doAddDecl
-      -- doAddDecl = everywhereM (mkM replaceTopLevelDecls) (makeDeltaAst top)
       doAddDecl = everywhereM (mkM replaceTopLevelDecls) top
       replaceTopLevelDecls :: ParsedSource -> Transform ParsedSource
       replaceTopLevelDecls m = insertAtEnd m decl'
@@ -909,22 +908,19 @@ rmTypeSig2 _libdir lp = do
 addHiding1 :: Changer
 addHiding1 _libdir (L l p) = do
   let doTransform = do
-        l0 <- uniqueSrcSpanT
-        l1 <- uniqueSrcSpanT
-        l2 <- uniqueSrcSpanT
         let
           [L li imp1,imp2] = hsmodImports p
-          n1 = L (noAnnSrcSpanDP0 l1) (mkVarUnqual (mkFastString "n1"))
-          n2 = L (noAnnSrcSpanDP0 l2) (mkVarUnqual (mkFastString "n2"))
-          v1 = L (addComma $ noAnnSrcSpanDP0 l1) (IEVar Nothing (L (noAnnSrcSpanDP0 l1) (IEName noExtField n1)))
-          v2 = L (           noAnnSrcSpanDP0 l2) (IEVar Nothing (L (noAnnSrcSpanDP0 l2) (IEName noExtField n2)))
-          impHiding = L (SrcSpanAnn (EpAnn d0
-                                     (AnnList Nothing
-                                              (Just (AddEpAnn AnnOpenP  d1))
-                                              (Just (AddEpAnn AnnCloseP d0))
-                                              [(AddEpAnn AnnHiding d1)]
-                                              [])
-                                       emptyComments) l0) [v1,v2]
+          n1 = L noAnnSrcSpanDP0 (mkVarUnqual (mkFastString "n1"))
+          n2 = L noAnnSrcSpanDP0 (mkVarUnqual (mkFastString "n2"))
+          v1 = L (addComma $ noAnnSrcSpanDP0) (IEVar Nothing (L noAnnSrcSpanDP0 (IEName noExtField n1)))
+          v2 = L (           noAnnSrcSpanDP0) (IEVar Nothing (L noAnnSrcSpanDP0 (IEName noExtField n2)))
+          impHiding = L (EpAnn d0
+                               (AnnList Nothing
+                                        (Just (AddEpAnn AnnOpenP  d1))
+                                        (Just (AddEpAnn AnnCloseP d0))
+                                        [(AddEpAnn AnnHiding d1)]
+                                        [])
+                                 emptyComments) [v1,v2]
           imp1' = imp1 { ideclImportList = Just (EverythingBut,impHiding)}
           imp2' = setEntryDP imp2 (DifferentLine 2 0)
           p' = p { hsmodImports = [L li imp1',imp2']}
@@ -939,24 +935,21 @@ addHiding1 _libdir (L l p) = do
 addHiding2 :: Changer
 addHiding2 _libdir top = do
   let doTransform = do
-        -- let (L l p) = makeDeltaAst top
         let (L l p) = top
-        l1 <- uniqueSrcSpanT
-        l2 <- uniqueSrcSpanT
         let
           [L li imp1] = hsmodImports p
-          Just (_,L lh ns) = ideclImportList imp1
-          lh' = (SrcSpanAnn (EpAnn d0
-                                     (AnnList Nothing
-                                              (Just (AddEpAnn AnnOpenP  d1))
-                                              (Just (AddEpAnn AnnCloseP d0))
-                                              [(AddEpAnn AnnHiding d1)]
-                                              [])
-                                       emptyComments) (locA lh))
-          n1 = L (noAnnSrcSpanDP0 l1) (mkVarUnqual (mkFastString "n1"))
-          n2 = L (noAnnSrcSpanDP0 l2) (mkVarUnqual (mkFastString "n2"))
-          v1 = L (addComma $ noAnnSrcSpanDP0 l1) (IEVar Nothing (L (noAnnSrcSpanDP0 l1) (IEName noExtField n1)))
-          v2 = L (           noAnnSrcSpanDP0 l2) (IEVar Nothing (L (noAnnSrcSpanDP0 l2) (IEName noExtField n2)))
+          Just (_,L _lh ns) = ideclImportList imp1
+          lh' = (EpAnn d0
+                       (AnnList Nothing
+                                (Just (AddEpAnn AnnOpenP  d1))
+                                (Just (AddEpAnn AnnCloseP d0))
+                                [(AddEpAnn AnnHiding d1)]
+                                [])
+                         emptyComments)
+          n1 = L (noAnnSrcSpanDP0) (mkVarUnqual (mkFastString "n1"))
+          n2 = L (noAnnSrcSpanDP0) (mkVarUnqual (mkFastString "n2"))
+          v1 = L (addComma $ noAnnSrcSpanDP0) (IEVar Nothing (L noAnnSrcSpanDP0 (IEName noExtField n1)))
+          v2 = L (           noAnnSrcSpanDP0) (IEVar Nothing (L noAnnSrcSpanDP0 (IEName noExtField n2)))
           L ln n = last ns
           n' = L (addComma ln) n
           imp1' = imp1 { ideclImportList = Just (EverythingBut, L lh' (init ns ++ [n',v1,v2]))}

@@ -372,7 +372,7 @@ name2String = showPprUnsafe
  -- ---------------------------------------------------------------------
 
 locatedAnAnchor :: LocatedAn a t -> RealSrcSpan
-locatedAnAnchor (L (SrcSpanAnn (EpAnn a _ _) _) _) = anchor a
+locatedAnAnchor (L (EpAnn a _ _) _) = anchor a
 
 -- ---------------------------------------------------------------------
 
@@ -507,7 +507,7 @@ hsDeclsClassDecl dec = case dec of
               tcdATs = ats, tcdATDefs = at_defs
             } -> map snd decls
     where
-      srs :: SrcAnn a -> RealSrcSpan
+      srs :: (HasLoc a) => a -> RealSrcSpan
       srs a = realSrcSpan $ locA a
       decls
           = orderedDecls sortKey $ Map.fromList

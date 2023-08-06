@@ -68,7 +68,6 @@ module GHC.Parser.Annotation (
   epAnnAnns, epAnnAnnsL,
   annParen2AddEpAnn,
   epAnnComments,
-  s_comments, s_entry,
 
   -- ** Working with locations of annotations
   sortLocatedA,
@@ -580,16 +579,16 @@ type LocatedL = GenLocated SrcSpanAnnL
 type LocatedP = GenLocated SrcSpanAnnP
 type LocatedC = GenLocated SrcSpanAnnC
 
-type SrcSpanAnnA = SrcAnn AnnListItem
-type SrcSpanAnnN = SrcAnn NameAnn
+type SrcSpanAnnA = EpAnn AnnListItem
+type SrcSpanAnnN = EpAnn NameAnn
 
-type SrcSpanAnnL = SrcAnn AnnList
-type SrcSpanAnnP = SrcAnn AnnPragma
-type SrcSpanAnnC = SrcAnn AnnContext
+type SrcSpanAnnL = EpAnn AnnList
+type SrcSpanAnnP = EpAnn AnnPragma
+type SrcSpanAnnC = EpAnn AnnContext
 
 -- | General representation of a 'GenLocated' type carrying a
 -- parameterised annotation type.
-type LocatedAn an = GenLocated (SrcAnn an)
+type LocatedAn an = GenLocated (EpAnn an)
 
 {-
 Note [XRec and Anno in the AST]
@@ -917,9 +916,9 @@ trailingAnnToAddEpAnn (AddDarrowAnn ss)  = AddEpAnn AnnDarrow ss
 
 -- | Helper function used in the parser to add a 'TrailingAnn' items
 -- to an existing annotation.
-addTrailingAnnToL :: SrcSpan -> TrailingAnn -> EpAnnComments
+addTrailingAnnToL :: TrailingAnn -> EpAnnComments
                   -> EpAnn AnnList -> EpAnn AnnList
-addTrailingAnnToL _ t cs n = n { anns = addTrailing (anns n)
+addTrailingAnnToL t cs n = n { anns = addTrailing (anns n)
                                , comments = comments n <> cs }
   where
     -- See Note [list append in addTrailing*]
@@ -927,9 +926,9 @@ addTrailingAnnToL _ t cs n = n { anns = addTrailing (anns n)
 
 -- | Helper function used in the parser to add a 'TrailingAnn' items
 -- to an existing annotation.
-addTrailingAnnToA :: SrcSpan -> TrailingAnn -> EpAnnComments
+addTrailingAnnToA :: TrailingAnn -> EpAnnComments
                   -> EpAnn AnnListItem -> EpAnn AnnListItem
-addTrailingAnnToA _ t cs n = n { anns = addTrailing (anns n)
+addTrailingAnnToA t cs n = n { anns = addTrailing (anns n)
                                , comments = comments n <> cs }
   where
     -- See Note [list append in addTrailing*]
@@ -937,19 +936,15 @@ addTrailingAnnToA _ t cs n = n { anns = addTrailing (anns n)
 
 -- | Helper function used in the parser to add a comma location to an
 -- existing annotation.
-addTrailingCommaToN :: SrcSpan -> EpAnn NameAnn -> EpaLocation -> EpAnn NameAnn
-addTrailingCommaToN _ n l = n { anns = addTrailing (anns n) l }
+addTrailingCommaToN :: EpAnn NameAnn -> EpaLocation -> EpAnn NameAnn
+addTrailingCommaToN  n l = n { anns = addTrailing (anns n) l }
   where
     -- See Note [list append in addTrailing*]
     addTrailing :: NameAnn -> EpaLocation -> NameAnn
     addTrailing n l = n { nann_trailing = nann_trailing n ++ [AddCommaAnn l]}
 
 noTrailingN :: SrcSpanAnnN -> SrcSpanAnnN
-noTrailingN (SrcSpanAnn s l)
-    = SrcSpanAnn (s { anns = (anns s) { nann_trailing = [] } }) l
-
--- noTrailingN :: SrcSpanAnnN -> SrcSpanAnnN
--- noTrailingN s = s { s_anns = (s_anns s) { nann_trailing = [] } }
+noTrailingN s = s { anns = (anns s) { nann_trailing = [] } }
 
 {-
 Note [list append in addTrailing*]
@@ -1008,7 +1003,7 @@ instance (NoAnn ann) => HasAnnotation (SrcSpanAnn' (EpAnn ann)) where
 noLocA :: (HasAnnotation e) => a -> GenLocated e a
 noLocA = L (noAnnSrcSpan noSrcSpan)
 
-getLocA :: GenLocated (SrcSpanAnn' a) e -> SrcSpan
+getLocA :: (HasLoc a) => GenLocated a e -> SrcSpan
 getLocA = getHasLoc
 
 noSrcSpanA :: (HasAnnotation e) => e
@@ -1039,6 +1034,10 @@ instance (HasLoc a) => (HasLoc (Maybe a)) where
   getHasLoc (Just a) = getHasLoc a
   getHasLoc Nothing = noSrcSpan
 
+instance HasLoc (EpAnn a) where
+  getHasLoc (EpAnn (EpaSpan l) _ _) = l
+  getHasLoc (EpAnn (EpaDelta _ _) _ _) = noSrcSpan
+
 getHasLocList :: HasLoc a => [a] -> SrcSpan
 getHasLocList [] = noSrcSpan
 getHasLocList xs = foldl1' combineSrcSpans $ map getHasLoc xs
@@ -1062,16 +1061,16 @@ extraToAnnList :: AnnList -> [AddEpAnn] -> AnnList
 extraToAnnList (AnnList a o c e t) as = AnnList a o c (e++as) t
 
 reAnn :: [TrailingAnn] -> EpAnnComments -> Located a -> LocatedA a
-reAnn anns cs (L l a) = L (SrcSpanAnn (EpAnn (spanAsAnchor l) (AnnListItem anns) cs) l) a
+reAnn anns cs (L l a) = L (EpAnn (spanAsAnchor l) (AnnListItem anns) cs) a
 
 reAnnC :: AnnContext -> EpAnnComments -> Located a -> LocatedC a
-reAnnC anns cs (L l a) = L (SrcSpanAnn (EpAnn (spanAsAnchor l) anns cs) l) a
+reAnnC anns cs (L l a) = L (EpAnn (spanAsAnchor l) anns cs) a
 
-reAnnL :: ann -> EpAnnComments -> Located e -> GenLocated (SrcAnn ann) e
-reAnnL anns cs (L l a) = L (SrcSpanAnn (EpAnn (spanAsAnchor l) anns cs) l) a
+reAnnL :: ann -> EpAnnComments -> Located e -> GenLocated (EpAnn ann) e
+reAnnL anns cs (L l a) = L (EpAnn (spanAsAnchor l) anns cs) a
 
 getLocAnn :: Located a  -> SrcSpanAnnA
-getLocAnn (L l _) = SrcSpanAnn noAnn l
+getLocAnn (L l _) = noAnnSrcSpan l
 
 -- instance NoAnn (EpAnn a) where
 --   -- Short form for 'EpAnnNotUsed'
@@ -1084,8 +1083,8 @@ addAnns (EpAnn l as1 cs) as2 cs2
 
 -- AZ:TODO use widenSpan here too
 addAnnsA :: SrcSpanAnnA -> [TrailingAnn] -> EpAnnComments -> SrcSpanAnnA
-addAnnsA (SrcSpanAnn (EpAnn l as1 cs) loc) as2 cs2
-  = SrcSpanAnn (EpAnn l (AnnListItem (lann_trailing as1 ++ as2)) (cs <> cs2)) loc
+addAnnsA (EpAnn l as1 cs) as2 cs2
+  = EpAnn l (AnnListItem (lann_trailing as1 ++ as2)) (cs <> cs2)
 
 -- | The annotations need to all come after the anchor.  Make sure
 -- this is the case.
@@ -1147,10 +1146,11 @@ widenAnchorS (EpaDelta _ _) (RealSrcSpan r mb) = EpaSpan (RealSrcSpan r mb)
 widenAnchorS anc _ = anc
 
 -- TODO:AZ rename this to Reflect new signature
-widenLocatedAn :: SrcAnn an -> [AddEpAnn] -> SrcAnn an
-widenLocatedAn (SrcSpanAnn (EpAnn _ a cs) l) as = SrcSpanAnn (EpAnn (spanAsAnchor l') a cs) l'
+widenLocatedAn :: EpAnn an -> [AddEpAnn] -> EpAnn an
+widenLocatedAn (EpAnn (EpaSpan l) a cs) as = EpAnn (spanAsAnchor l') a cs
   where
     l' = widenSpan l as
+widenLocatedAn (EpAnn anc a cs) _as = EpAnn anc a cs
 
 epAnnAnnsL :: EpAnn a -> [a]
 epAnnAnnsL (EpAnn _ anns _) = [anns]
@@ -1167,42 +1167,31 @@ annParen2AddEpAnn (EpAnn _ (AnnParen pt o c) _)
 epAnnComments :: EpAnn an -> EpAnnComments
 epAnnComments (EpAnn _ _ cs) = cs
 
--- Forward compatibility
-s_comments :: SrcAnn ann -> EpAnnComments
-s_comments (SrcSpanAnn an _) = epAnnComments an
-
-s_entry :: SrcAnn ann -> EpaLocation
-s_entry = epaLocationFromSrcAnn
-
 -- ---------------------------------------------------------------------
 -- sortLocatedA :: [LocatedA a] -> [LocatedA a]
-sortLocatedA :: [GenLocated (SrcSpanAnn' a) e] -> [GenLocated (SrcSpanAnn' a) e]
+sortLocatedA :: (HasLoc (EpAnn a)) => [GenLocated (EpAnn a) e] -> [GenLocated (EpAnn a) e]
 sortLocatedA = sortBy (leftmost_smallest `on` getLocA)
 
-mapLocA :: (NoAnn ann) => (a -> b) -> GenLocated SrcSpan a -> GenLocated (SrcAnn ann) b
+mapLocA :: (NoAnn ann) => (a -> b) -> GenLocated SrcSpan a -> GenLocated (EpAnn ann) b
 mapLocA f (L l a) = L (noAnnSrcSpan l) (f a)
 
 -- AZ:TODO: move this somewhere sane
-
-combineLocsA :: Semigroup a => GenLocated (SrcAnn a) e1 -> GenLocated (SrcAnn a) e2 -> SrcAnn a
+combineLocsA :: Semigroup a => GenLocated (EpAnn a) e1 -> GenLocated (EpAnn a) e2 -> EpAnn a
 combineLocsA (L a _) (L b _) = combineSrcSpansA a b
 
-combineSrcSpansA :: Semigroup a => SrcAnn a -> SrcAnn a -> SrcAnn a
-combineSrcSpansA (SrcSpanAnn aa la) (SrcSpanAnn ab lb)
-  = case SrcSpanAnn (aa <> ab) (combineSrcSpans la lb) of
-      SrcSpanAnn (EpAnn anc an cs) l ->
-        SrcSpanAnn (EpAnn (widenAnchorR anc (realSrcSpan l)) an cs) l
+combineSrcSpansA :: Semigroup a => EpAnn a -> EpAnn a -> EpAnn a
+combineSrcSpansA aa ab = aa <> ab
 
 -- | Combine locations from two 'Located' things and add them to a third thing
-addCLocA :: (NoAnn ann)
-         => GenLocated (SrcSpanAnn' a) e1 -> GenLocated SrcSpan e2 -> e3
-         -> GenLocated (SrcAnn ann) e3
-addCLocA a b c = L (noAnnSrcSpan $ combineSrcSpans (locA $ getLoc a) (getLoc b)) c
+addCLocA :: (NoAnn ann, HasLoc (EpAnn a))
+         => GenLocated (EpAnn a) e1 -> GenLocated SrcSpan e2 -> e3
+         -> GenLocated (EpAnn ann) e3
+addCLocA a b c = L (noAnnSrcSpan $ combineSrcSpans (locA a) (getLoc b)) c
 
-addCLocAA :: (NoAnn ann)
-          => GenLocated (SrcSpanAnn' a1) e1 -> GenLocated (SrcSpanAnn' a2) e2 -> e3
-          -> GenLocated (SrcAnn ann) e3
-addCLocAA a b c = L (noAnnSrcSpan $ combineSrcSpans (locA $ getLoc a) (locA $ getLoc b)) c
+addCLocAA :: (NoAnn ann, HasLoc (EpAnn a1), HasLoc (EpAnn a2))
+          => GenLocated (EpAnn a1) e1 -> GenLocated (EpAnn a2) e2 -> e3
+          -> GenLocated (EpAnn ann) e3
+addCLocAA a b c = L (noAnnSrcSpan $ combineSrcSpans (locA a) (locA b)) c
 
 -- ---------------------------------------------------------------------
 -- Utilities for manipulating EpAnnComments
@@ -1245,15 +1234,14 @@ comment loc cs = EpAnn (EpaSpan (RealSrcSpan loc Strict.Nothing)) NoEpAnns cs
 
 -- | Add additional comments to a 'SrcAnn', used for manipulating the
 -- AST prior to exact printing the changed one.
-addCommentsToSrcAnn :: (NoAnn ann) => SrcAnn ann -> EpAnnComments -> SrcAnn ann
-addCommentsToSrcAnn (SrcSpanAnn (EpAnn a an cs) loc) cs'
-  = SrcSpanAnn (EpAnn a an (cs <> cs')) loc
+-- TODO:AZ rename this, no longer SrcAnn
+addCommentsToSrcAnn :: (NoAnn ann) => EpAnn ann -> EpAnnComments -> EpAnn ann
+addCommentsToSrcAnn (EpAnn a an cs) cs' = EpAnn a an (cs <> cs')
 
 -- | Replace any existing comments on a 'SrcAnn', used for manipulating the
 -- AST prior to exact printing the changed one.
-setCommentsSrcAnn :: (NoAnn ann) => SrcAnn ann -> EpAnnComments -> SrcAnn ann
-setCommentsSrcAnn (SrcSpanAnn (EpAnn a an _) loc) cs
-  = SrcSpanAnn (EpAnn a an cs) loc
+setCommentsSrcAnn :: (NoAnn ann) => EpAnn ann -> EpAnnComments -> EpAnn ann
+setCommentsSrcAnn (EpAnn a an _) cs = (EpAnn a an cs)
 
 -- | Add additional comments, used for manipulating the
 -- AST prior to exact printing the changed one.
@@ -1270,18 +1258,14 @@ setCommentsEpAnn _ (EpAnn a an _) cs = EpAnn a an cs
 -- | Transfer comments and trailing items from the annotations in the
 -- first 'SrcSpanAnnA' argument to those in the second.
 transferAnnsA :: SrcSpanAnnA -> SrcSpanAnnA -> (SrcSpanAnnA,  SrcSpanAnnA)
-transferAnnsA (SrcSpanAnn (EpAnn a an cs) l) to
-  = ((SrcSpanAnn (EpAnn a noAnn emptyComments) l), to')
-  where
-    to' = case to of
-      (SrcSpanAnn (EpAnn a an' cs') loc)
-        -> SrcSpanAnn (EpAnn a (an' <> an) (cs' <> cs)) loc
+transferAnnsA (EpAnn a an cs) (EpAnn a' an' cs')
+  = (EpAnn a noAnn emptyComments, EpAnn a' (an' <> an) (cs' <> cs))
 
 -- | Transfer trailing items but not comments from the annotations in the
 -- first 'SrcSpanAnnA' argument to those in the second.
 transferFollowingA :: SrcSpanAnnA -> SrcSpanAnnA -> (SrcSpanAnnA,  SrcSpanAnnA)
-transferFollowingA (SrcSpanAnn (EpAnn a1 an1 cs1) l1) (SrcSpanAnn (EpAnn a2 an2 cs2) l2)
-  = (SrcSpanAnn (EpAnn a1 noAnn cs1') l1, SrcSpanAnn (EpAnn a2 (an1 <> an2) cs2') l2)
+transferFollowingA (EpAnn a1 an1 cs1) (EpAnn a2 an2 cs2)
+  = (EpAnn a1 noAnn cs1', EpAnn a2 (an1 <> an2) cs2')
   where
     pc = priorComments cs1
     fc = getFollowingComments cs1
@@ -1291,20 +1275,20 @@ transferFollowingA (SrcSpanAnn (EpAnn a1 an1 cs1) l1) (SrcSpanAnn (EpAnn a2 an2 
 -- | Transfer trailing items from the annotations in the
 -- first 'SrcSpanAnnA' argument to those in the second.
 transferAnnsOnlyA :: SrcSpanAnnA -> SrcSpanAnnA -> (SrcSpanAnnA,  SrcSpanAnnA)
-transferAnnsOnlyA (SrcSpanAnn (EpAnn a an cs) l) (SrcSpanAnn (EpAnn a' an' cs') l')
-  = (SrcSpanAnn (EpAnn a noAnn cs) l, SrcSpanAnn (EpAnn a' (an' <> an) cs') l')
+transferAnnsOnlyA (EpAnn a an cs) (EpAnn a' an' cs')
+  = (EpAnn a noAnn cs, EpAnn a' (an' <> an) cs')
 
 -- | Transfer comments from the annotations in the
 -- first 'SrcSpanAnnA' argument to those in the second.
 transferCommentsOnlyA :: SrcSpanAnnA -> SrcSpanAnnA -> (SrcSpanAnnA,  SrcSpanAnnA)
-transferCommentsOnlyA (SrcSpanAnn (EpAnn a an cs) l) (SrcSpanAnn (EpAnn a' an' cs') l')
-  = (SrcSpanAnn (EpAnn a an emptyComments) l, SrcSpanAnn (EpAnn a' an' (cs <> cs')) l')
+transferCommentsOnlyA (EpAnn a an cs) (EpAnn a' an' cs')
+  = (EpAnn a an emptyComments, EpAnn a' an' (cs <> cs'))
 
 -- | Transfer prior comments only from the annotations in the
 -- first 'SrcSpanAnnA' argument to those in the second.
 transferPriorCommentsA :: SrcSpanAnnA -> SrcSpanAnnA -> (SrcSpanAnnA,  SrcSpanAnnA)
-transferPriorCommentsA (SrcSpanAnn (EpAnn a1 an1 cs1) l1) (SrcSpanAnn (EpAnn a2 an2 cs2) l2)
-  = (SrcSpanAnn (EpAnn a1 an1 cs1') l1,  SrcSpanAnn (EpAnn a2 an2 cs2') l2)
+transferPriorCommentsA (EpAnn a1 an1 cs1) (EpAnn a2 an2 cs2)
+  = (EpAnn a1 an1 cs1', EpAnn a2 an2 cs2')
   where
     pc = priorComments cs1
     fc = getFollowingComments cs1
@@ -1314,13 +1298,12 @@ transferPriorCommentsA (SrcSpanAnn (EpAnn a1 an1 cs1) l1) (SrcSpanAnn (EpAnn a2 
 
 -- | Remove the exact print annotations payload, leaving only the
 -- anchor and comments.
-commentsOnlyA :: NoAnn ann => SrcAnn ann -> SrcAnn ann
-commentsOnlyA (SrcSpanAnn (EpAnn a _ cs) loc) = (SrcSpanAnn (EpAnn a noAnn cs) loc)
+commentsOnlyA :: NoAnn ann => EpAnn ann -> EpAnn ann
+commentsOnlyA (EpAnn a _ cs) = EpAnn a noAnn cs
 
 -- | Remove the comments, leaving the exact print annotations payload
-removeCommentsA :: SrcAnn ann -> SrcAnn ann
-removeCommentsA (SrcSpanAnn (EpAnn a an _) loc)
-  = (SrcSpanAnn (EpAnn a an emptyComments) loc)
+removeCommentsA :: EpAnn ann -> EpAnn ann
+removeCommentsA (EpAnn a an _) = EpAnn a an emptyComments
 
 -- ---------------------------------------------------------------------
 -- Semigroup instances, to allow easy combination of annotaion elements
@@ -1464,10 +1447,20 @@ instance (Outputable a, Outputable e)
      => Outputable (GenLocated (SrcSpanAnn' a) e) where
   ppr = pprLocated
 
+instance (Outputable a, Outputable e)
+     => Outputable (GenLocated (EpAnn a) e) where
+  ppr = pprLocated
+
 instance (Outputable a, OutputableBndr e)
      => OutputableBndr (GenLocated (SrcSpanAnn' a) e) where
   pprInfixOcc = pprInfixOcc . unLoc
   pprPrefixOcc = pprPrefixOcc . unLoc
+
+instance (Outputable a, OutputableBndr e)
+     => OutputableBndr (GenLocated (EpAnn a) e) where
+  pprInfixOcc = pprInfixOcc . unLoc
+  pprPrefixOcc = pprPrefixOcc . unLoc
+
 
 instance Outputable AnnListItem where
   ppr (AnnListItem ts) = text "AnnListItem" <+> ppr ts

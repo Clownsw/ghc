@@ -3,6 +3,4 @@
 
 module Orphans where
 
--- import GHC hiding (EpaComment)
-
 -- -- ---------------------------------------------------------------------
