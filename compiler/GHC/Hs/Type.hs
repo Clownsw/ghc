@@ -540,9 +540,7 @@ mkHsOpTy :: (Anno (IdGhcP p) ~ SrcSpanAnnN)
 mkHsOpTy prom ty1 op ty2 = HsOpTy noAnn prom ty1 op ty2
 
 mkHsAppTy :: LHsType (GhcPass p) -> LHsType (GhcPass p) -> LHsType (GhcPass p)
-mkHsAppTy t1 t2
-  -- = addCLocAA t1 t2 (HsAppTy noExtField t1 (parenthesizeHsType appPrec t2))
-  = addCLocAA t1 t2 (HsAppTy noExtField t1 t2)
+mkHsAppTy t1 t2 = addCLocAA t1 t2 (HsAppTy noExtField t1 t2)
 
 mkHsAppTys :: LHsType (GhcPass p) -> [LHsType (GhcPass p)]
            -> LHsType (GhcPass p)
@@ -585,7 +583,7 @@ splitHsFunType ty = go ty
       = (anns, csy S.<> epAnnComments ll, HsScaled mult x':args, res)
       where
         L l t = x
-        x' = L (addCommentsToSrcAnn l cs) t
+        x' = L (addCommentsToEpAnn l cs) t
 
     go other = ([], emptyComments, [], other)
 

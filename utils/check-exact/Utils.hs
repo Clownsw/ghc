@@ -354,54 +354,10 @@ rdrName2String r =
 name2String :: Name -> String
 name2String = showPprUnsafe
 
--- ---------------------------------------------------------------------
-
--- occAttributes :: OccName.OccName -> String
--- occAttributes o = "(" ++ ns ++ vo ++ tv ++ tc ++ d ++ ds ++ s ++ v ++ ")"
---   where
---     -- ns = (showSDocUnsafe $ OccName.pprNameSpaceBrief $ occNameSpace o) ++ ", "
---     ns = (showSDocUnsafe $ OccName.pprNameSpaceBrief $ occNameSpace o) ++ ", "
---     vo = if isVarOcc     o then "Var "     else ""
---     tv = if isTvOcc      o then "Tv "      else ""
---     tc = if isTcOcc      o then "Tc "      else ""
---     d  = if isDataOcc    o then "Data "    else ""
---     ds = if isDataSymOcc o then "DataSym " else ""
---     s  = if isSymOcc     o then "Sym "     else ""
---     v  = if isValOcc     o then "Val "     else ""
-
  -- ---------------------------------------------------------------------
 
 locatedAnAnchor :: LocatedAn a t -> RealSrcSpan
 locatedAnAnchor (L (EpAnn a _ _) _) = anchor a
-
--- ---------------------------------------------------------------------
-
--- setAnchorAn :: (Default an) => LocatedAn an a -> Anchor -> EpAnnComments -> LocatedAn an a
--- setAnchorAn (L (SrcSpanAnn EpAnnNotUsed l)    a) anc cs
---   = (L (SrcSpanAnn (EpAnn anc Orphans.def cs) l) a)
---      -- `debug` ("setAnchorAn: anc=" ++ showAst anc)
--- setAnchorAn (L (SrcSpanAnn (EpAnn _ an _) l) a) anc cs
---   = (L (SrcSpanAnn (EpAnn anc an cs) l) a)
---      -- `debug` ("setAnchorAn: anc=" ++ showAst anc)
-
--- setAnchorEpa :: (Default an) => EpAnn an -> Anchor -> EpAnnComments -> EpAnn an
--- setAnchorEpa EpAnnNotUsed   anc cs = EpAnn anc Orphans.def cs
--- setAnchorEpa (EpAnn _ an _) anc cs = EpAnn anc an          cs
-
--- setAnchorEpaL :: EpAnn AnnList -> Anchor -> EpAnnComments -> EpAnn AnnList
--- setAnchorEpaL EpAnnNotUsed   anc cs = EpAnn anc mempty cs
--- setAnchorEpaL (EpAnn _ an _) anc cs = EpAnn anc (an {al_anchor = Nothing}) cs
-
--- setAnchorHsModule :: HsModule GhcPs -> Anchor -> EpAnnComments -> HsModule GhcPs
--- setAnchorHsModule hsmod anc cs = hsmod { hsmodExt = (hsmodExt hsmod) {hsmodAnn = an'} }
---   where
---     anc' = anc { anchor_op = UnchangedAnchor }
---     an' = setAnchorEpa (hsmodAnn $ hsmodExt hsmod) anc' cs
-
--- |Version of l2l that preserves the anchor, immportant if it has an
--- updated AnchorOperation
-moveAnchor :: NoAnn b => SrcAnn a -> SrcAnn b
-moveAnchor (SrcSpanAnn (EpAnn anc _ cs) l) = SrcSpanAnn (EpAnn anc noAnn cs) l
 
 -- ---------------------------------------------------------------------
 
@@ -459,16 +415,10 @@ hackSrcSpanToAnchor (RealSrcSpan r mb)
   = case mb of
     (Strict.Just (BufSpan (BufPos s) (BufPos e))) ->
       if s <= 0 && e <= 0
-      -- then Anchor r (MovedAnchor (deltaPos (-s) (-e)))
       then EpaDelta (deltaPos (-s) (-e)) []
         `debug` ("hackSrcSpanToAnchor: (r,s,e)=" ++ showAst (r,s,e) )
-      -- else Anchor r UnchangedAnchor
       else EpaSpan (RealSrcSpan r mb)
     _ -> EpaSpan (RealSrcSpan r mb)
-  -- = if s <= 0 && e <= 0
-  --   then EpaDelta (deltaPos (-s) (-e)) []
-  --     `debug` ("hackSrcSpanToAnchor: (r,s,e)=" ++ showAst (r,s,e) )
-  --   else EpaSpan r mb
 
 hackAnchorToSrcSpan :: Anchor -> SrcSpan
 hackAnchorToSrcSpan (EpaSpan s) = s

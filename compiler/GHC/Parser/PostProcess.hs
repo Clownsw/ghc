@@ -405,15 +405,15 @@ mkSpliceDecl :: LHsExpr GhcPs -> P (LHsDecl GhcPs)
 mkSpliceDecl lexpr@(L loc expr)
   | HsUntypedSplice _ splice@(HsUntypedSpliceExpr {}) <- expr = do
     cs <- getCommentsFor (locA loc)
-    return $ L (addCommentsToSrcAnn loc cs) $ SpliceD noExtField (SpliceDecl noExtField (L loc splice) DollarSplice)
+    return $ L (addCommentsToEpAnn loc cs) $ SpliceD noExtField (SpliceDecl noExtField (L loc splice) DollarSplice)
 
   | HsUntypedSplice _ splice@(HsQuasiQuote {}) <- expr = do
     cs <- getCommentsFor (locA loc)
-    return $ L (addCommentsToSrcAnn loc cs) $ SpliceD noExtField (SpliceDecl noExtField (L loc splice) DollarSplice)
+    return $ L (addCommentsToEpAnn loc cs) $ SpliceD noExtField (SpliceDecl noExtField (L loc splice) DollarSplice)
 
   | otherwise = do
     cs <- getCommentsFor (locA loc)
-    return $ L (addCommentsToSrcAnn loc cs) $ SpliceD noExtField (SpliceDecl noExtField
+    return $ L (addCommentsToEpAnn loc cs) $ SpliceD noExtField (SpliceDecl noExtField
                                  (L loc (HsUntypedSpliceExpr noAnn lexpr))
                                        BareSplice)
 
@@ -817,8 +817,8 @@ mkGadtDecl loc names dcol ty = do
 
   (args, res_ty, annsa, csa) <-
     case body_ty of
-     L ll (HsFunTy af hsArr (L loc' (HsRecTy an rf)) res_ty) -> do
-       let an' = addCommentsToEpAnn (locA loc') an (comments af)
+     L ll (HsFunTy af hsArr (L _loc' (HsRecTy an rf)) res_ty) -> do
+       let an' = addCommentsToEpAnn an (comments af)
        arr <- case hsArr of
          HsUnrestrictedArrow arr -> return arr
          _ -> do addError $ mkPlainErrorMsgEnvelope (getLocA body_ty) $

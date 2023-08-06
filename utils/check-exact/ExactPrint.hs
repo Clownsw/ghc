@@ -265,9 +265,6 @@ data CaptureComments = CaptureComments
 mkEntry :: Anchor -> [TrailingAnn] -> EpAnnComments -> Entry
 mkEntry anc ts cs = Entry anc ts cs NoFlushComments CanUpdateAnchor
 
-instance (HasTrailing an) => HasEntry (SrcSpanAnn' (EpAnn an)) where
-  fromAnn (SrcSpanAnn an _) = fromAnn an
-
 instance (HasTrailing a) => HasEntry (EpAnn a) where
   fromAnn (EpAnn anc a cs) = mkEntry anc (trailing a) cs
 

@@ -4450,7 +4450,7 @@ commentsA loc cs = EpAnn (EpaSpan loc) noAnn cs
 commentsPA :: (NoAnn ann) => LocatedAn ann a -> P (LocatedAn ann a)
 commentsPA la@(L l a) = do
   cs <- getPriorCommentsFor (getLocA la)
-  return (L (addCommentsToSrcAnn l cs) a)
+  return (L (addCommentsToEpAnn l cs) a)
 
 rs :: SrcSpan -> RealSrcSpan
 rs (RealSrcSpan l _) = l

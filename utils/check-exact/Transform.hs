@@ -429,19 +429,19 @@ balanceCommentsFB (L lf (FunBind x n (MG o (L lm matches)))) second = do
               [],
               getFollowingComments $ comments lf)
 
-    lf' = setCommentsSrcAnn lf (EpaComments before)
+    lf' = setCommentsEpAnn lf (EpaComments before)
   debugM $ "balanceCommentsFB (before, after): " ++ showAst (before, after)
   debugM $ "balanceCommentsFB lf': " ++ showAst lf'
   -- let matches' = case matches of
   let matches' :: [LocatedA (Match GhcPs (LHsExpr GhcPs))]
       matches' = case matches of
                     (L lm' m':ms') ->
-                      (L (addCommentsToSrcAnn lm' (EpaComments middle )) m':ms')
+                      (L (addCommentsToEpAnn lm' (EpaComments middle )) m':ms')
                     _ -> error "balanceCommentsFB"
   matches'' <- balanceCommentsList' matches'
   let (m,ms) = case reverse matches'' of
                  (L lm' m':ms') ->
-                   (L (addCommentsToSrcAnn lm' (EpaCommentsBalanced [] after)) m',ms')
+                   (L (addCommentsToEpAnn lm' (EpaCommentsBalanced [] after)) m',ms')
                    -- (L (addCommentsToEpAnnS lm' (EpaCommentsBalanced [] after)) m',ms')
                  _ -> error "balanceCommentsFB4"
   debugM $ "balanceCommentsFB: (m,ms):" ++ showAst (m,ms)
@@ -478,7 +478,7 @@ balanceCommentsMatch (L l (Match am mctxt pats (GRHSs xg grhss binds))) = do
           (L lg (GRHS ag grs rhs):gs) ->
             let
               anc1' = setFollowingComments anc1 stay
-              an1' = setCommentsSrcAnn l anc1'
+              an1' = setCommentsEpAnn l anc1'
 
               -- ---------------------------------
               (moved,bindsm) = pushTrailingComments WithWhere (EpaCommentsBalanced [] move) binds
@@ -501,8 +501,8 @@ pushTrailingComments w cs lb@(HsValBinds an _)
   where
     decls = hsDeclsLocalBinds lb
     (an', decls') = case reverse decls of
-      [] -> (addCommentsToEpAnn (spanHsLocaLBinds lb) an cs, decls)
-      (L la d:ds) -> (an, L (addCommentsToSrcAnn la cs) d:ds)
+      [] -> (addCommentsToEpAnn an cs, decls)
+      (L la d:ds) -> (an, L (addCommentsToEpAnn la cs) d:ds)
     (vb,_ws2) = case runTransform (replaceDeclsValbinds w lb (reverse decls')) of
       ((HsValBinds _ vb'), _, ws2') -> (vb', ws2')
       _ -> (ValBinds NoAnnSortKey emptyBag [], [])
@@ -555,8 +555,8 @@ balanceComments' la1 la2 = do
     move = sortEpaComments $ map snd (cs1move ++ move'' ++ move')
     stay = sortEpaComments $ map snd (cs1stay ++ stay')
 
-    an1' = setCommentsSrcAnn (getLoc la1) (EpaCommentsBalanced (map snd cs1p) move)
-    an2' = setCommentsSrcAnn (getLoc la2) (EpaCommentsBalanced stay (map snd cs2f))
+    an1' = setCommentsEpAnn (getLoc la1) (EpaCommentsBalanced (map snd cs1p) move)
+    an2' = setCommentsEpAnn (getLoc la2) (EpaCommentsBalanced stay (map snd cs2f))
     la1' = L an1' f
     la2' = L an2' s
 
@@ -643,8 +643,8 @@ moveLeadingComments (L la a) lb = (L la' a, lb')
     -- TODO: need to set an entry delta on lb' to zero, and move the
     -- original spacing to the first comment.
 
-    la' = setCommentsSrcAnn la (EpaCommentsBalanced [] after)
-    lb' = addCommentsToSrcAnn lb (EpaCommentsBalanced before [])
+    la' = setCommentsEpAnn la (EpaCommentsBalanced [] after)
+    lb' = addCommentsToEpAnn lb (EpaCommentsBalanced before [])
 
 -- | A GHC comment includes the span of the preceding (non-comment)
 -- token.  Takes an original list of comments, and converts the
@@ -697,7 +697,7 @@ balanceSameLineComments (L la (Match anm mctxt pats (GRHSs x grhss lb))) = do
           gac' = setFollowingComments gac (sortEpaComments $ gfc ++ move)
           ga' = (EpAnn anc an gac')
 
-          la'' = setCommentsSrcAnn la cs1
+          la'' = setCommentsEpAnn la cs1
 
 -- ---------------------------------------------------------------------
 
