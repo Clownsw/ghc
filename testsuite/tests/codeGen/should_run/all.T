@@ -234,3 +234,7 @@ test('MulMayOflo',
      [ omit_ways(['ghci']), js_skip, ignore_stdout],
      multi_compile_and_run,
      ['MulMayOflo', [('MulMayOflo_cmm.cmm', '')], ''])
+test('CCallConv',
+     [],
+     multi_compile_and_run,
+     ['CCallConv', [('CCallConv_cmm.cmm', ''), ('CCallConv_c.c', '')], ''])
