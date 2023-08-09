@@ -260,7 +260,6 @@ data AnnKeywordId
     | AnnNewtype
     | AnnName -- ^ where a name loses its location in the AST, this carries it
     | AnnOf
-    | AnnOne
     | AnnOpen    -- ^ '{-\# DEPRECATED' etc. Opening of pragmas where
                  -- the capitalisation of the string can be changed by
                  -- the user. The actual text used is stored in a
@@ -1046,6 +1045,9 @@ class NoAnn a where
 class HasLoc a where
   -- ^ conveniently calculate locations for things without locations attached
   getHasLoc :: a -> SrcSpan
+
+instance HasLoc SrcSpan where
+  getHasLoc = id
 
 instance HasLoc (Located a) where
   getHasLoc (L l _) = l
