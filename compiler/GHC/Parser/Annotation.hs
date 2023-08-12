@@ -13,7 +13,7 @@ module GHC.Parser.Annotation (
 
   -- * In-tree Exact Print Annotations
   AddEpAnn(..),
-  EpaLocation(..), epaLocationRealSrcSpan,
+  EpaLocation, EpaLocation'(..), epaLocationRealSrcSpan,
   TokenLocation(..),
   getTokenSrcSpan,
   DeltaPos(..), deltaPos, getDeltaLine,
@@ -26,7 +26,8 @@ module GHC.Parser.Annotation (
 
   -- ** Comments in Annotations
 
-  EpAnnComments(..), LEpaComment, emptyComments,
+  EpAnnComments(..), LEpaComment, NoCommentsLocation, NoComments(..), emptyComments,
+  epaToNoCommentsLocation, noCommentsToEpaLocation,
   getFollowingComments, setFollowingComments, setPriorComments,
   EpAnnCO,
 
@@ -402,9 +403,26 @@ data AddEpAnn = AddEpAnn AnnKeywordId EpaLocation deriving (Data,Eq)
 -- in the @'EpaDelta'@ variant captures any comments between the prior
 -- output and the thing being marked here, since we cannot otherwise
 -- sort the relative order.
-data EpaLocation = EpaSpan !SrcSpan
-                 | EpaDelta !DeltaPos ![LEpaComment]
-               deriving (Data,Eq,Show)
+
+data EpaLocation' a = EpaSpan !SrcSpan
+                    | EpaDelta !DeltaPos !a
+                    deriving (Data,Eq,Show)
+
+type EpaLocation = EpaLocation' [LEpaComment]
+
+type NoCommentsLocation = EpaLocation' NoComments
+
+data NoComments = NoComments
+  deriving (Data,Eq,Ord,Show)
+
+epaToNoCommentsLocation :: EpaLocation -> NoCommentsLocation
+epaToNoCommentsLocation (EpaSpan ss) = EpaSpan ss
+epaToNoCommentsLocation (EpaDelta dp []) = EpaDelta dp NoComments
+epaToNoCommentsLocation (EpaDelta _ _ ) = panic "epaToNoCommentsLocation"
+
+noCommentsToEpaLocation :: NoCommentsLocation -> EpaLocation
+noCommentsToEpaLocation (EpaSpan ss) = EpaSpan ss
+noCommentsToEpaLocation (EpaDelta dp NoComments) = EpaDelta dp []
 
 -- | Tokens embedded in the AST have an EpaLocation, unless they come from
 -- generated code (e.g. by TH).
@@ -454,7 +472,10 @@ epaLocationRealSrcSpan :: EpaLocation -> RealSrcSpan
 epaLocationRealSrcSpan (EpaSpan (RealSrcSpan r _)) = r
 epaLocationRealSrcSpan _ = panic "epaLocationRealSrcSpan"
 
-instance Outputable EpaLocation where
+instance Outputable NoComments where
+  ppr NoComments = text "NoComments"
+
+instance (Outputable a) => Outputable (EpaLocation' a) where
   ppr (EpaSpan r) = text "EpaSpan" <+> ppr r
   ppr (EpaDelta d cs) = text "EpaDelta" <+> ppr d <+> ppr cs
 
@@ -510,18 +531,18 @@ data EpAnn ann
 
 type Anchor = EpaLocation -- Transitional
 
-anchor :: Anchor -> RealSrcSpan
+anchor :: (EpaLocation' a) -> RealSrcSpan
 anchor (EpaSpan (RealSrcSpan r _)) = r
 anchor _ = panic "anchor"
 
-spanAsAnchor :: SrcSpan -> Anchor
+spanAsAnchor :: SrcSpan -> (EpaLocation' a)
 spanAsAnchor ss  = EpaSpan ss
 
-realSpanAsAnchor :: RealSrcSpan -> Anchor
+realSpanAsAnchor :: RealSrcSpan -> (EpaLocation' a)
 realSpanAsAnchor s = EpaSpan (RealSrcSpan s Strict.Nothing)
 
-noSpanAnchor :: Anchor
-noSpanAnchor =  EpaDelta (SameLine 0) []
+noSpanAnchor :: (NoAnn a) => (EpaLocation' a)
+noSpanAnchor =  EpaDelta (SameLine 0) noAnn
 
 -- ---------------------------------------------------------------------
 
@@ -539,7 +560,7 @@ data EpAnnComments = EpaComments
                         , followingComments :: ![LEpaComment] }
         deriving (Data, Eq)
 
-type LEpaComment = GenLocated Anchor EpaComment
+type LEpaComment = GenLocated NoCommentsLocation EpaComment
 
 emptyComments :: EpAnnComments
 emptyComments = EpaComments []
@@ -1280,15 +1301,6 @@ instance Semigroup (AnnSortKey tag) where
 instance Monoid (AnnSortKey tag) where
   mempty = NoAnnSortKey
 
--- instance Semigroup AnnList where
---   (AnnList a1 o1 c1 r1 t1) <> (AnnList a2 o2 c2 r2 t2)
---     = AnnList (a1 <> a2) (c o1 o2) (c c1 c2) (r1 <> r2) (t1 <> t2)
---     where
---       -- Left biased combination for the open and close annotations
---       c Nothing x = x
---       c x Nothing = x
---       c f _       = f
-
 -- ---------------------------------------------------------------------
 -- NoAnn instances
 -- ---------------------------------------------------------------------
@@ -1350,7 +1362,7 @@ instance Outputable DeltaPos where
   ppr (SameLine c) = text "SameLine" <+> ppr c
   ppr (DifferentLine l c) = text "DifferentLine" <+> ppr l <+> ppr c
 
-instance Outputable (GenLocated Anchor EpaComment) where
+instance Outputable (GenLocated NoCommentsLocation EpaComment) where
   ppr (L l c) = text "L" <+> ppr l <+> ppr c
 
 instance Outputable EpAnnComments where
