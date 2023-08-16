@@ -94,6 +94,43 @@ already be in scope, and so are always new variables that only bind whatever typ
 matched, rather than ever referring to a variable from an outer scope. Type wildcards
 ``_`` may be used in any place where no new variable needs binding.
 
+.. _type-abstractions-in-functions:
+
+Type Abstractions in Functions
+------------------------------
+
+Type abstraction syntax can be used in function left-hand-sides and lambdas to bring into
+scope type variables associated with invisible ``forall``. For example::
+
+    id :: forall a. a -> a
+    id @t x = x :: t
+
+Here type variables ``t`` and ``a`` are the same type. There is no need to use explicit forall,
+this example is also fine::
+
+    const :: a -> b -> a
+    const @ta @tb x  = x
+
+In that case variables are in left-to-right order like that works in :extension:`TypeApplications`.
+
+It is not possible to "match" against type pattern in lambda. This code is rejected::
+
+    id :: a -> a
+    id @[t] x = x
+
+It's usefull to bring in scope type variables passed into rank N call back of the function
+like in this example::
+
+    reify :: a -> (forall s . SomeClass a s => r) -> r
+    reify = ...
+
+    res = reify foo (\ @s -> ... {- use s here -})
+
+Type wildcards ``_`` may be used to skip type binders::
+
+    flipConst :: b -> a -> a
+    flipConst @_ @ta _ x = x :: ta
+
 .. _invisible-binders-in-type-declarations:
 
 Invisible Binders in Type Declarations

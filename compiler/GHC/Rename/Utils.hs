@@ -764,7 +764,7 @@ genVarPat n = wrapGenSpan $ VarPat noExtField (wrapGenSpan n)
 genWildPat :: LPat GhcRn
 genWildPat = wrapGenSpan $ WildPat noExtField
 
-genSimpleFunBind :: Name -> [LPat GhcRn]
+genSimpleFunBind :: Name -> [LArgPat GhcRn]
                  -> LHsExpr GhcRn -> LHsBind GhcRn
 genSimpleFunBind fun pats expr
   = L gen $ genFunBind (L gen fun)

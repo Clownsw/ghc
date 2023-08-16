@@ -478,7 +478,7 @@ new_inferExpType mb_frr_orig
 -- | Extract a type out of an ExpType, if one exists. But one should always
 -- exist. Unless you're quite sure you know what you're doing.
 readExpType_maybe :: MonadIO m => ExpType -> m (Maybe TcType)
-readExpType_maybe (Check ty)                   = return (Just ty)
+readExpType_maybe (Check _ ty)                 = return (Just ty)
 readExpType_maybe (Infer (IR { ir_ref = ref})) = liftIO $ readIORef ref
 {-# INLINEABLE readExpType_maybe #-}
 
@@ -506,7 +506,7 @@ scaledExpTypeToType (Scaled m exp_ty)
 -- | Extracts the expected type if there is one, or generates a new
 -- TauTv if there isn't.
 expTypeToType :: ExpType -> TcM TcType
-expTypeToType (Check ty)      = return ty
+expTypeToType (Check _ ty)    = return ty
 expTypeToType (Infer inf_res) = inferResultToType inf_res
 
 inferResultToType :: InferResult -> TcM Type

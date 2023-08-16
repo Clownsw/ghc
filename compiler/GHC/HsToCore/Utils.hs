@@ -40,7 +40,7 @@ module GHC.HsToCore.Utils (
         mkSelectorBinds,
 
         selectSimpleMatchVarL, selectMatchVars, selectMatchVar,
-        mkOptTickBox, mkBinaryTickBox, decideBangHood,
+        mkOptTickBox, mkBinaryTickBox, decideBangHood, decideArgBangHood,
         isTrueLHsExpr
     ) where
 
@@ -1053,6 +1053,9 @@ decideBangHood dflags lpat
            LazyPat _ lp' -> lp'
            BangPat _ _   -> lp
            _             -> L l (BangPat noExtField lp)
+
+decideArgBangHood :: DynFlags -> LArgPat GhcTc -> LArgPat GhcTc
+decideArgBangHood df (L l arg_pat) = L l (mapVisPat (decideBangHood df) arg_pat)
 
 isTrueLHsExpr :: LHsExpr GhcTc -> Maybe (CoreExpr -> DsM CoreExpr)
 

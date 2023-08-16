@@ -11,7 +11,7 @@
 -}
 
 module GHC.Tc.Utils.Instantiate (
-     topSkolemise,
+     topSkolemise, topSkolemiseExpPatTys,
      topInstantiate,
      instantiateSigma,
      instCall, instDFunType, instStupidTheta, instTyVarsWith,
@@ -197,6 +197,56 @@ topSkolemise skolem_info ty
       | otherwise
       = return (wrap, tv_prs, ev_vars, substTy subst ty)
         -- substTy is a quick no-op on an empty substitution
+
+topSkolemiseExpPatTys :: SkolemInfo
+                      -> TcSigmaType
+                      -> TcM ( HsWrapper
+                             , [(Name, TyVar)]  -- All skolemised variables
+                             , [EvVar]          -- All "given"s
+                             , [ExpPatType]     -- All Invisible SpecifiedSpec variables
+                             , TcRhoType)
+-- See Note [Skolemisation]
+topSkolemiseExpPatTys skolem_info ty
+  = go init_subst idHsWrapper [] [] [] ty
+    where
+      init_subst = mkEmptySubst (mkInScopeSet (tyCoVarsOfType ty))
+
+      -- Why recursive?  See Note [Skolemisation]
+      go subst wrap tv_prs ev_vars exp_pat_tys ty
+        | (tvs, inner_ty) <- tcSplitSomeForAllTyVars isInferredForAllTyFlag ty
+        , not (null tvs)
+        = go_forall tvs inner_ty
+                  (\_ _ -> exp_pat_tys)
+                  subst wrap tv_prs ev_vars exp_pat_tys
+
+        | (tvs, inner_ty) <- tcSplitSomeForAllTyVars isSpecifiedForAllTyFlag ty
+        , not (null tvs)
+        = go_forall tvs inner_ty
+                  (\tvs exp_pat_tys -> exp_pat_tys ++ map (ExpForAllPatTy InvisPatTy) tvs)
+                  subst wrap tv_prs ev_vars exp_pat_tys
+
+        | (theta, inner_ty) <- tcSplitPhiTy ty
+        , not (null theta)
+        = do { ev_vars1 <- newEvVars (substTheta subst theta)
+            ; go subst
+                  (wrap <.> mkWpEvLams ev_vars1)
+                  tv_prs
+                  (ev_vars ++ ev_vars1)
+                  exp_pat_tys
+                  inner_ty }
+
+        | otherwise
+        = return (wrap, tv_prs, ev_vars, exp_pat_tys, substTy subst ty)
+          -- substTy is a quick no-op on an empty substitution
+
+      go_forall tvs inner_ty pat_tys_action subst wrap tv_prs ev_vars exp_pat_tys
+        = do { (subst', tvs1) <- tcInstSkolTyVarsX skolem_info subst tvs
+              ; go subst'
+                  (wrap <.> mkWpTyLams tvs1)
+                  (tv_prs ++ (map tyVarName tvs `zip` tvs1))
+                  ev_vars
+                  (pat_tys_action tvs1 exp_pat_tys)
+                  inner_ty }
 
 topInstantiate :: CtOrigin -> TcSigmaType -> TcM (HsWrapper, TcRhoType)
 -- Instantiate outer invisible binders (both Inferred and Specified)

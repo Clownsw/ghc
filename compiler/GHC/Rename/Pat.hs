@@ -23,7 +23,7 @@ general, all of these functions return a renamed thing, and a set of
 free variables.
 -}
 module GHC.Rename.Pat (-- main entry points
-              rnPat, rnPats, rnBindPat,
+              rnPat, rnPats, rnArgPats, rnBindPat,
 
               NameMaker, applyNameMaker,     -- a utility for making names:
               localRecNameMaker, topRecNameMaker,  --   sometimes we want to make local names,
@@ -412,6 +412,31 @@ There are various entry points to renaming patterns, depending on
  we export the three points in this design space that we actually need:
 -}
 
+rnArgPats :: HsMatchContext GhcRn -> [LArgPat GhcPs] -> ([LArgPat GhcRn] -> RnM (a, FreeVars)) -> RnM (a, FreeVars)
+rnArgPats ctxt pats thing_inside = do
+  envs_before <- getRdrEnvs
+
+  -- (1) rename the patterns, bringing into scope all of the term variables
+  -- (2) then do the thing inside.
+  unCpsRn (rnLArgPatsAndThen (matchNameMaker ctxt) pats) $ \ pats' -> do
+    -- Check for duplicated and shadowed names
+    -- Must do this *after* renaming the patterns
+    -- See Note [Collect binders only after renaming] in GHC.Hs.Utils
+    -- Because we don't bind the vars all at once, we can't
+    --    check incrementally for duplicates;
+    -- Nor can we check incrementally for shadowing, else we'll
+    --    complain *twice* about duplicates e.g. f (x,x) = ...
+    --
+    -- See Note [Don't report shadowing for pattern synonyms]
+    let bndrs = collectLArgPatsBinders CollVarTyVarBinders (toList pats')
+    addErrCtxt doc_pat $
+      if isPatSynCtxt ctxt
+         then checkDupNames bndrs
+         else checkDupAndShadowedNames envs_before bndrs
+    thing_inside pats'
+  where
+    doc_pat = text "In" <+> pprMatchContext ctxt
+
 -- ----------- Entry point 1: rnPats -------------------
 -- Binds local names; the scope of the bindings is entirely in the thing_inside
 --   * allows type sigs to bind type vars
@@ -483,6 +508,17 @@ rnBindPat name_maker pat = runCps (rnLPatAndThen name_maker pat)
 *                                                      *
 *********************************************************
 -}
+
+rnLArgPatsAndThen :: NameMaker -> [LArgPat GhcPs] -> CpsRn [LArgPat GhcRn]
+rnLArgPatsAndThen mk = mapM (wrapSrcSpanCps rnArgPatAndThen) where
+  rnArgPatAndThen (VisPat x p) = do
+    p' <- rnLPatAndThen mk p
+    pure (VisPat x p')
+  rnArgPatAndThen (InvisPat x at tp) = do
+    liftCps $ unlessXOptM LangExt.TypeAbstractions $
+      addErr (TcRnIllegalInvisibleTypePattern tp)
+    tp' <- rnHsTyPat HsTypePatCtx tp
+    pure (InvisPat x at tp')
 
 -- ----------- Entry point 3: rnLPatAndThen -------------------
 -- General version: parameterized by how you make new names

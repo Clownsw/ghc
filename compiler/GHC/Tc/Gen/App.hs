@@ -895,13 +895,13 @@ At a call site we may have calls looking like this
 At definition sites we may have type /patterns/ to abstract over type variables
    fi           x       = rhs   -- Inferred: no type pattern
    fs           x       = rhs   -- Specified: type pattern omitted
-   fs @a       (x :: a) = rhs   -- Specified: type pattern supplied (NB: not implemented)
+   fs @a       (x :: a) = rhs   -- Specified: type pattern supplied
    fr (type a) (x :: a) = rhs   -- Required: type pattern is compulsory, `type` qualifier used
    fr a        (x :: a) = rhs   -- Required: type pattern is compulsory, `type` qualifier omitted (NB: not implemented)
 
 Type patterns in lambdas work the same way as they do in a function LHS
    fs = \           x       -> rhs   -- Specified: type pattern omitted
-   fs = \ @a       (x :: a) -> rhs   -- Specified: type pattern supplied (NB: not implemented)
+   fs = \ @a       (x :: a) -> rhs   -- Specified: type pattern supplied
    fr = \ (type a) (x :: a) -> rhs   -- Required: type pattern is compulsory, `type` qualifier used
    fr = \ a        (x :: a) -> rhs   -- Required: type pattern is compulsory, `type` qualifier omitted (NB: not implemented)
 
@@ -1292,7 +1292,7 @@ quickLookResultType :: Delta -> TcRhoType -> ExpRhoType -> TcM TcRhoType
 -- It returns its second argument, but with any variables in Delta
 -- substituted out, so no variables in Delta escape
 
-quickLookResultType delta app_res_rho (Check exp_rho)
+quickLookResultType delta app_res_rho (Check _ exp_rho)
   = -- In checking mode only, do qlUnify with the expected result type
     do { unless (isEmptyVarSet delta)  $ -- Optimisation only
          qlUnify delta app_res_rho exp_rho

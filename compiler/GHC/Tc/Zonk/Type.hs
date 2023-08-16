@@ -870,7 +870,7 @@ zonkMatch :: Anno (GRHS GhcTc (LocatedA (body GhcTc))) ~ SrcAnn NoEpAnns
           -> ZonkTcM (LMatch GhcTc (LocatedA (body GhcTc)))
 zonkMatch zBody (L loc match@(Match { m_pats = pats
                                     , m_grhss = grhss }))
-  = runZonkBndrT (zonkPats pats) $ \ new_pats ->
+  = runZonkBndrT (zonkArgPats pats) $ \ new_pats ->
   do  { new_grhss <- zonkGRHSs zBody grhss
       ; return (L loc (match { m_pats = new_pats, m_grhss = new_grhss })) }
 
@@ -1468,6 +1468,15 @@ zonkRecFields (HsRecFields flds dd)
 ************************************************************************
 -}
 
+zonkArgPat :: LArgPat GhcTc ->  ZonkBndrTcM (LArgPat GhcTc)
+zonkArgPat arg_pat = wrapLocZonkBndrMA zonk_arg_pat arg_pat where
+  zonk_arg_pat (VisPat x pat) = do
+    pat' <- zonkPat pat
+    pure (VisPat x pat')
+  zonk_arg_pat (InvisPat ty tok tp) = do
+    ty' <- noBinders $ zonkTcTypeToTypeX ty
+    pure (InvisPat ty' tok tp)
+
 zonkPat :: LPat GhcTc -> ZonkBndrTcM (LPat GhcTc)
 -- Extend the environment as we go, because it's possible for one
 -- pattern to bind something that is used in another (inside or
@@ -1618,6 +1627,9 @@ zonkConStuff (RecCon (HsRecFields rpats dd))
 ---------------------------
 zonkPats :: [LPat GhcTc] -> ZonkBndrTcM [LPat GhcTc]
 zonkPats = traverse zonkPat
+
+zonkArgPats :: [LArgPat GhcTc] -> ZonkBndrTcM [LArgPat GhcTc]
+zonkArgPats = traverse zonkArgPat
 
 {-
 ************************************************************************

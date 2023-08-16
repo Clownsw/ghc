@@ -1705,9 +1705,10 @@ the choice in HsExpanded, but it seems simpler to consult the flag (again).
 -- Building representations of auxiliary structures like Match, Clause, Stmt,
 
 repMatchTup ::  LMatch GhcRn (LHsExpr GhcRn) -> MetaM (Core (M TH.Match))
-repMatchTup (L _ (Match { m_pats = [p]
+repMatchTup (L _ (Match { m_pats = [ap]
                         , m_grhss = GRHSs _ guards wheres })) =
-  do { ss1 <- mkGenSyms (collectPatBinders CollNoDictBinders p)
+  do { let [p] = expectVisPats [ap]
+     ; ss1 <- mkGenSyms (collectPatBinders CollNoDictBinders p)
      ; addBinds ss1 $ do {
      ; p1 <- repLP p
      ; (ss2,ds) <- repBinds wheres
@@ -1720,9 +1721,9 @@ repMatchTup _ = panic "repMatchTup: case alt with more than one arg"
 repClauseTup ::  LMatch GhcRn (LHsExpr GhcRn) -> MetaM (Core (M TH.Clause))
 repClauseTup (L _ (Match { m_pats = ps
                          , m_grhss = GRHSs _ guards  wheres })) =
-  do { ss1 <- mkGenSyms (collectPatsBinders CollNoDictBinders ps)
+  do { ss1 <- mkGenSyms (collectLArgPatsBinders CollNoDictBinders ps)
      ; addBinds ss1 $ do {
-       ps1 <- repLPs ps
+       ps1 <- repLMPs ps
      ; (ss2,ds) <- repBinds wheres
      ; addBinds ss2 $ do {
        gs <- repGuards guards
@@ -2055,10 +2056,10 @@ repLambda :: LMatch GhcRn (LHsExpr GhcRn) -> MetaM (Core (M TH.Exp))
 repLambda (L _ (Match { m_pats = ps
                       , m_grhss = GRHSs _ [L _ (GRHS _ [] e)]
                                               (EmptyLocalBinds _) } ))
- = do { let bndrs = collectPatsBinders CollNoDictBinders ps ;
+ = do { let bndrs = collectLArgPatsBinders CollNoDictBinders ps ;
       ; ss  <- mkGenSyms bndrs
       ; lam <- addBinds ss (
-                do { xs <- repLPs ps; body <- repLE e; repLam xs body })
+                do { xs <- repLMPs ps; body <- repLE e; repLam xs body })
       ; wrapGenSyms ss lam }
 
 repLambda (L _ m) = notHandled (ThGuardedLambdas m)
@@ -2077,6 +2078,15 @@ repLPs ps = repListM patTyConName repLP ps
 
 repLP :: LPat GhcRn -> MetaM (Core (M TH.Pat))
 repLP p = repP (unLoc p)
+
+-- Process a list of match patterns
+repLMPs :: [LArgPat GhcRn] -> MetaM (Core ([M TH.ArgPat]))
+repLMPs ps = repListM argPatTyConName repLMP ps
+
+repLMP :: LArgPat GhcRn -> MetaM (Core (M TH.ArgPat))
+repLMP (L _ (VisPat _ p))     = do {p' <- repLP p; repAPvis p'}
+repLMP (L _ (InvisPat _ _ t)) = do {t' <- repLTy (hstp_body t); repAPinvis t'}
+
 
 repP :: Pat GhcRn -> MetaM (Core (M TH.Pat))
 repP (WildPat _)        = repPwild
@@ -2386,6 +2396,12 @@ repPsig (MkC p) (MkC t) = rep2 sigPName [p, t]
 repPtype :: Core (M TH.Type) -> MetaM (Core (M TH.Pat))
 repPtype (MkC t) = rep2 typePName [t]
 
+repAPvis :: Core (M TH.Pat) -> MetaM (Core (M TH.ArgPat))
+repAPvis (MkC t) = rep2 visAPName [t]
+
+repAPinvis :: Core (M TH.Type) -> MetaM (Core (M TH.ArgPat))
+repAPinvis (MkC t) = rep2 invisAPName [t]
+
 --------------- Expressions -----------------
 repVarOrCon :: Name -> Core TH.Name -> MetaM (Core (M TH.Exp))
 repVarOrCon vc str
@@ -2409,7 +2425,7 @@ repApp (MkC x) (MkC y) = rep2 appEName [x,y]
 repAppType :: Core (M TH.Exp) -> Core (M TH.Type) -> MetaM (Core (M TH.Exp))
 repAppType (MkC x) (MkC y) = rep2 appTypeEName [x,y]
 
-repLam :: Core [(M TH.Pat)] -> Core (M TH.Exp) -> MetaM (Core (M TH.Exp))
+repLam :: Core [(M TH.ArgPat)] -> Core (M TH.Exp) -> MetaM (Core (M TH.Exp))
 repLam (MkC ps) (MkC e) = rep2 lamEName [ps, e]
 
 repLamCase :: Core [(M TH.Match)] -> MetaM (Core (M TH.Exp))
@@ -2546,7 +2562,7 @@ repFromThenTo (MkC x) (MkC y) (MkC z) = rep2 fromThenToEName [x,y,z]
 repMatch :: Core (M TH.Pat) -> Core (M TH.Body) -> Core [(M TH.Dec)] -> MetaM (Core (M TH.Match))
 repMatch (MkC p) (MkC bod) (MkC ds) = rep2 matchName [p, bod, ds]
 
-repClause :: Core [(M TH.Pat)] -> Core (M TH.Body) -> Core [(M TH.Dec)] -> MetaM (Core (M TH.Clause))
+repClause :: Core [(M TH.ArgPat)] -> Core (M TH.Body) -> Core [(M TH.Dec)] -> MetaM (Core (M TH.Clause))
 repClause (MkC ps) (MkC bod) (MkC ds) = rep2 clauseName [ps, bod, ds]
 
 -------------- Dec -----------------------------

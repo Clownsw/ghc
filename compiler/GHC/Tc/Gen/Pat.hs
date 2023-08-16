@@ -18,7 +18,7 @@ module GHC.Tc.Gen.Pat
    , newLetBndr
    , LetBndrSpec(..)
    , tcCheckPat, tcCheckPat_O, tcInferPat
-   , tcPats
+   , tcPats, tcArgPats
    , addDataConStupidTheta
    )
 where
@@ -102,7 +102,7 @@ tcLetPat sig_fn no_gen pat pat_ty thing_inside
 
 -----------------
 tcPats :: HsMatchContext GhcTc
-       -> [LPat GhcRn]             -- ^ atterns
+       -> [LPat GhcRn]             -- ^ patterns
        -> [ExpPatType]             -- ^ types of the patterns
        -> TcM a                    -- ^ checker for the body
        -> TcM ([LPat GhcTc], a)
@@ -122,6 +122,79 @@ tcPats ctxt pats pat_tys thing_inside
   = tc_tt_lpats pat_tys penv pats thing_inside
   where
     penv = PE { pe_lazy = False, pe_ctxt = LamPat ctxt, pe_orig = PatOrigin }
+
+tcArgPats :: HsMatchContext GhcTc
+       -> [LArgPat GhcRn]          -- ^ patterns
+       -> [ExpPatType]             -- ^ types of the patterns
+       -> ([ExpPatType] -> TcM a)  -- ^ checker for the body
+       -> TcM ([LArgPat GhcTc], a)
+tcArgPats ctxt pats pat_tys thing_inside = do
+  (pat_tys', rest_pat_tys) <- filter_exp_tys pats pat_tys
+  tc_tt_larg_pats pat_tys' penv pats (thing_inside rest_pat_tys)
+  where
+    penv = PE { pe_lazy = False, pe_ctxt = LamPat ctxt, pe_orig = PatOrigin }
+
+    filter_exp_tys :: [LArgPat GhcRn] -> [ExpPatType] -> TcM ([ExpPatType], [ExpPatType])
+
+    -- See Note [Type-checking invisible type patterns: check mode]
+    filter_exp_tys [] rest = pure ([], rest)
+
+    -- visible patterns
+    filter_exp_tys pats@(L _ VisPat{} : _) (ExpForAllPatTy InvisPatTy _ : pat_tys) =
+      filter_exp_tys pats (drop_invis_pats pat_tys)
+    filter_exp_tys (L _ VisPat{} : pats) (p : pat_tys) = do
+      (pat_tys', rest) <- filter_exp_tys pats pat_tys
+      pure (p : pat_tys', rest)
+
+    -- invisible patterns
+    filter_exp_tys (L _ InvisPat{} : pats) (p@(ExpForAllPatTy InvisPatTy _) : pat_tys) = do
+      (pat_tys', rest) <- filter_exp_tys pats pat_tys
+      pure (p : pat_tys', rest)
+    filter_exp_tys (L loc (InvisPat _ _ tp) : _) _ = do
+      failAt (locA loc) (TcRnInvisPatWithNoForAll tp)
+
+    filter_exp_tys (L _  VisPat{} :_) [] =
+      panic "filter_exp_tys: expected patterns more then expected pattern types"
+
+    drop_invis_pats (ExpForAllPatTy InvisPatTy _ : pat_tys) = drop_invis_pats pat_tys
+    drop_invis_pats pat_tys = pat_tys
+
+{- Note [Type-checking invisible type patterns: check mode]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+GHC Proposal #448 introduced invisible type patterns that correspond to
+`forall a.` in types. Since these patters are invisible, user can mention
+them or just ignore in case they don't need to bring new type variable
+into scope. I.e., this code is fine:
+
+  f :: forall a b c. Bool -> ...
+  f @ta @tb True  = ... -- `ta` corresponds to `a`, `tb` - to `b`, `c` is not mentioned
+  f         False = ... -- no type patterns needs to be checked
+
+For type checking these patterns in check mode we need to
+  1) Collect all the type variables in `forall`s with Invisible SpecifiedSpec binders
+     as they are our expected pattern types.
+  2) Filter out from collected expected type patterns all that don't correspond to
+     invisible type pattern in function/lambda.
+
+GHC implements eager scolemisation. That means, that type variables in `forall.` would
+be instantiated a long before we start checking type patterns. As a workaround we collect
+information about scolemised `forall`s in functions `tcSkolemiseScopedExpPatTys`,
+`tcTopSkolemiseExpPatTys` and `tcSkolemiseExpType` and propagate collected information
+in `Check` data constructor of `ExpType` type.
+
+Filtering of collected type patterns is implemented in `filter_exp_tys` function
+inside of `tcArgType`, where we have both expected pattern types and actual argument
+patterns.
+
+Notice, that we may collect more pattern types then we need in current match, but we
+should not drop them, because we may have such code:
+
+  f :: forall a b c. ...
+  f @ta @tb = \ @tc -> ...
+
+Instead, we add the rest of expected types to the inner expected type to propagate
+them deeper.
+-}
 
 tcInferPat :: FixedRuntimeRepContext
            -> HsMatchContext GhcTc
@@ -228,7 +301,7 @@ tcPatBndr penv@(PE { pe_ctxt = LetPat { pc_lvl    = bind_lvl
 
   | otherwise                          -- No signature
   = do { (co, bndr_ty) <- case scaledThing exp_pat_ty of
-             Check pat_ty    -> promoteTcType bind_lvl pat_ty
+             Check _ pat_ty  -> promoteTcType bind_lvl pat_ty
              Infer infer_res -> assert (bind_lvl == ir_lvl infer_res) $
                                 -- If we were under a constructor that bumped the
                                 -- level, we'd be in checking mode (see tcConArg)
@@ -372,6 +445,22 @@ tc_tt_lpats tys penv pats
                penv
                (zipEqual "tc_tt_lpats" pats tys)
 
+tc_tt_larg_pat :: ExpPatType
+           -> Checker (LArgPat GhcRn) (LArgPat GhcTc)
+tc_tt_larg_pat pat_ty penv (L span pat) thing_inside
+  = setSrcSpanA span $
+    do  { (pat', res) <- maybeWrapArgPatCtxt pat
+                            (tc_tt_arg_pat pat_ty penv pat)
+                            thing_inside
+        ; return (L span pat', res) }
+
+tc_tt_larg_pats :: [ExpPatType] -> Checker [LArgPat GhcRn] [LArgPat GhcTc]
+tc_tt_larg_pats tys penv pats
+  = assertPpr (equalLength pats tys) (ppr pats $$ ppr tys) $
+    tcMultiple (\ penv' (p,t) -> tc_tt_larg_pat t penv' p)
+               penv
+               (zipEqual "tc_tt_lpats" pats tys)
+
 --------------------
 -- See Note [Wrapper returned from tcSubMult] in GHC.Tc.Utils.Unify.
 checkManyPattern :: Scaled a -> TcM HsWrapper
@@ -385,8 +474,25 @@ tc_tt_pat
 tc_tt_pat pat_ty penv (ParPat x lpar pat rpar) thing_inside = do
         { (pat', res) <- tc_tt_lpat pat_ty penv pat thing_inside
         ; return (ParPat x lpar pat' rpar, res) }
-tc_tt_pat (ExpFunPatTy pat_ty) penv pat thing_inside = tc_pat pat_ty penv pat thing_inside
-tc_tt_pat (ExpForAllPatTy tv)  penv pat thing_inside = tc_forall_pat penv (pat, tv) thing_inside
+tc_tt_pat (ExpFunPatTy pat_ty)   penv pat thing_inside = tc_pat pat_ty penv pat thing_inside
+tc_tt_pat (ExpForAllPatTy _ tv)  penv pat thing_inside = tc_forall_pat penv (pat, tv) thing_inside
+
+tc_tt_arg_pat
+        :: ExpPatType
+        -- ^ Fully refined result type
+        -> Checker (ArgPat GhcRn) (ArgPat GhcTc)
+        -- ^ Translated pattern
+tc_tt_arg_pat exp_ty penv (VisPat x pat) thing_inside
+  = do {(pat', r)<- tc_tt_lpat exp_ty penv pat thing_inside
+       ; pure (VisPat x pat', r) }
+tc_tt_arg_pat (ExpForAllPatTy InvisPatTy tv) _ (InvisPat _ tokat tp) thing_inside
+  = do {(sig_wcs, sig_ibs, arg_ty) <- tcHsTyPat tp (varType tv)
+       ; _ <- unifyType Nothing arg_ty (mkTyVarTy tv)
+       ; result <- tcExtendNameTyVarEnv sig_wcs $
+                   tcExtendNameTyVarEnv sig_ibs $
+                   thing_inside
+       ; return (InvisPat arg_ty tokat tp, result) }
+tc_tt_arg_pat _ _ _ _ = panic "tc_tt_arg_pat: not a ExpForAllPatTy InvisPatTy agains InvisPat"
 
 tc_forall_pat :: Checker (Pat GhcRn, TcTyVar) (Pat GhcTc)
 tc_forall_pat _ (EmbTyPat _ toktype tp, tv) thing_inside
@@ -1611,6 +1717,12 @@ pattern (perhaps deeply)
 
 See also Note [Typechecking pattern bindings] in GHC.Tc.Gen.Bind
 -}
+
+maybeWrapArgPatCtxt :: ArgPat GhcRn -> (TcM a -> TcM b) -> TcM a -> TcM b
+maybeWrapArgPatCtxt (VisPat{}) tcm thing_inside = tcm thing_inside
+maybeWrapArgPatCtxt (InvisPat _ _ ty_pat) tcm thing_inside
+  = addErrCtxt msg $ tcm $ popErrCtxt thing_inside where
+  msg = hang (text "In the invisible pattern:") 2 (ppr ty_pat)
 
 maybeWrapPatCtxt :: Pat GhcRn -> (TcM a -> TcM b) -> TcM a -> TcM b
 -- Not all patterns are worth pushing a context

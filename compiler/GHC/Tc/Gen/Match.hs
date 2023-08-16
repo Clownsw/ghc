@@ -261,8 +261,8 @@ tcMatch ctxt pat_tys rhs_ty match
     tc_match ctxt pat_tys rhs_ty
              match@(Match { m_pats = pats, m_grhss = grhss })
       = add_match_ctxt match $
-        do { (pats', grhss') <- tcPats (mc_what ctxt) pats pat_tys $
-                                tcGRHSs ctxt grhss rhs_ty
+        do { (pats', grhss') <- tcArgPats (mc_what ctxt) pats pat_tys $ \pat_tys' ->
+                                tcGRHSs ctxt grhss (pat_tys' `addExpPatTypes` rhs_ty)
            ; return (Match { m_ext = noAnn
                            , m_ctxt = mc_what ctxt
                            , m_pats = filter_out_type_pats pats'
@@ -277,11 +277,19 @@ tcMatch ctxt pat_tys rhs_ty match
 
     -- We filter out type patterns because we have no use for them in HsToCore.
     -- Type variable bindings have already been converted to HsWrappers.
-    filter_out_type_pats :: [LPat GhcTc] -> [LPat GhcTc]
-    filter_out_type_pats = filterByList (map is_fun_pat_ty pat_tys)
+    filter_out_type_pats :: [LArgPat GhcTc] -> [LArgPat GhcTc]
+    filter_out_type_pats = filterByList (map is_fun_pat_ty vis_pat_tys) . filterOut is_invis_pat
       where
+        vis_pat_tys = filterOut is_invis_pat_ty pat_tys
+
         is_fun_pat_ty ExpFunPatTy{}    = True
         is_fun_pat_ty ExpForAllPatTy{} = False
+
+        is_invis_pat (L _ InvisPat{}) = True
+        is_invis_pat _                = False
+
+        is_invis_pat_ty (ExpForAllPatTy InvisPatTy _) = True
+        is_invis_pat_ty _ = False
 
 -------------
 tcGRHSs :: AnnoBody body
@@ -1189,5 +1197,8 @@ checkArgCounts matchContext (MG { mg_alts = L _ (match1:matches) })
     n_args1 = args_in_match match1
     mb_bad_matches = NE.nonEmpty [m | m <- matches, args_in_match m /= n_args1]
 
-    args_in_match :: (LocatedA (Match GhcRn body1) -> Int)
-    args_in_match (L _ (Match { m_pats = pats })) = length pats
+    args_in_match :: LocatedA (Match GhcRn body1) -> Int
+    args_in_match (L _ (Match { m_pats = pats })) = length (filterOut is_invis_pat pats)
+
+    is_invis_pat (L _ InvisPat{}) = True
+    is_invis_pat _                = False

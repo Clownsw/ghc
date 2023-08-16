@@ -2866,7 +2866,7 @@ aexp    :: { ECP }
                                    unECP $2 >>= \ $2 ->
                                    mkHsNegAppPV (comb2 $1 $>) $2 [mj AnnMinus $1] }
 
-        | '\\' apats '->' exp
+        | '\\' argpats '->' exp
                    {  ECP $
                       unECP $4 >>= \ $4 ->
                       mkHsLamPV (comb2 $1 $>) (\cs -> mkMatchGroup FromSource
@@ -2882,7 +2882,7 @@ aexp    :: { ECP }
         | '\\' 'lcase' altslist(pats1)
             {  ECP $ $3 >>= \ $3 ->
                  mkHsLamCasePV (comb2 $1 $>) LamCase $3 [mj AnnLam $1,mj AnnCase $2] }
-        | '\\' 'lcases' altslist(apats)
+        | '\\' 'lcases' altslist(argpats)
             {  ECP $ $3 >>= \ $3 ->
                  mkHsLamCasePV (comb2 $1 $>) LamCases $3 [mj AnnLam $1,mj AnnCases $2] }
         | 'if' exp optSemi 'then' exp optSemi 'else' exp
@@ -3369,13 +3369,24 @@ pat     :  exp          {% (checkPattern <=< runPV) (unECP $1) }
 
 -- 'pats1' does the same thing as 'pat', but returns it as a singleton
 -- list so that it can be used with a parameterized production rule
-pats1   :: { [LPat GhcPs] }
-pats1   : pat { [ $1 ] }
+--
+-- It is used only for parsing patterns in `\case` and `case of`
+pats1   :: { [LArgPat GhcPs] }
+pats1   : pat { [ mkVisPat $1 ] }
 
 bindpat :: { LPat GhcPs }
 bindpat :  exp            {% -- See Note [Parser-Validator Details] in GHC.Parser.PostProcess
                              checkPattern_details incompleteDoBlock
                                               (unECP $1) }
+
+argpat   :: { LArgPat GhcPs }
+argpat    : apat                  { mkVisPat $1 }
+          | PREFIX_AT atype       { L (getLocAnn (reLoc $2)) (InvisPat noExtField (hsTok $1) (mkHsTyPat noAnn $2)) }
+
+argpats :: { [LArgPat GhcPs] }
+          : argpat argpats            { $1 : $2 }
+          | {- empty -}               { [] }
+
 
 apat   :: { LPat GhcPs }
 apat    : aexp                  {% (checkPattern <=< runPV) (unECP $1) }

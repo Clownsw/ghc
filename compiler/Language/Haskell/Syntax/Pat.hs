@@ -20,7 +20,7 @@
 -- See Note [Language.Haskell.Syntax.* Hierarchy] for why not GHC.Hs.*
 module Language.Haskell.Syntax.Pat (
         Pat(..), LPat,
-        ConLikeP,
+        ConLikeP, ArgPat(..), LArgPat, mapVisPat,
 
         HsConPatDetails, hsConPatArgs, hsConPatTyArgs,
         HsConPatTyArg(..),
@@ -240,6 +240,20 @@ data HsConPatTyArg p =
   HsConPatTyArg
     !(LHsToken "@" p)
      (HsTyPat p)
+
+-- | A pattern to be used in a sequence of patterns, like what appears
+-- to the right of @f@ in @f a b True = ...@. A 'ArgPat' allows for the
+-- possibility of binding a /type variable/ with \@.
+data ArgPat pass
+  = VisPat (XVisPat pass) (LPat pass)
+  | InvisPat (XInvisPat pass) !(LHsToken "@" pass) (HsTyPat (NoGhcTc pass))
+  | XArgPat !(XXArgPat pass)
+
+mapVisPat :: (LPat pass -> LPat pass) -> ArgPat pass -> ArgPat pass
+mapVisPat f (VisPat x pat) = VisPat x (f pat)
+mapVisPat _ arg_pat = arg_pat
+
+type LArgPat pass =  XRec pass (ArgPat pass)
 
 -- | Haskell Constructor Pattern Details
 type HsConPatDetails p = HsConDetails (HsConPatTyArg (NoGhcTc p)) (LPat p) (HsRecFields p (LPat p))

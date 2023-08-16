@@ -596,6 +596,8 @@ type family GhcDiagnosticCode c = n | n -> c where
   GhcDiagnosticCode "TcRnPatersonCondFailure"                       = 22979
   GhcDiagnosticCode "TcRnDeprecatedInvisTyArgInConPat"              = 69797
   GhcDiagnosticCode "TcRnInvalidDefaultedTyVar"                     = 45625
+  GhcDiagnosticCode "TcRnInvisPatWithNoForAll"                      = 14964
+  GhcDiagnosticCode "TcRnIllegalInvisibleTypePattern"               = 78249
 
   -- TcRnTypeApplicationsDisabled
   GhcDiagnosticCode "TypeApplication"                               = 23482

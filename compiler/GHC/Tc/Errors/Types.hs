@@ -4140,8 +4140,36 @@ data TcRnMessage where
       -> NE.NonEmpty TcTyVar  -- ^ The invalid type variables of the proposal
       -> TcRnMessage
 
-  deriving Generic
 
+  {-| TcRnInvisPatWithNoForAll is an error raised when invisible type pattern
+      is used without associated `forall` in types
+
+      Exaples:
+
+        f :: Int
+        f @t = 5
+
+        g :: [a -> a]
+        g = [\ @t x -> x :: t]
+
+      Test cases:
+  -}
+  TcRnInvisPatWithNoForAll :: HsTyPat GhcRn -> TcRnMessage
+
+  {-| TcRnIllegalInvisibleTypePattern is an error raised when invisible type pattern
+      is used without the TypeAbstractions extension enabled
+
+      Example:
+
+        {-# LANGUAGE NoTypeAbstractions #-}
+        id :: a -> a
+        id @t x = x
+
+      Test cases:
+  -}
+  TcRnIllegalInvisibleTypePattern :: HsTyPat GhcPs -> TcRnMessage
+
+  deriving Generic
 
 ----
 

@@ -48,6 +48,8 @@ templateHaskellNames = [
     conPName, tildePName, bangPName, infixPName,
     asPName, wildPName, recPName, listPName, sigPName, viewPName,
     typePName,
+    -- ArgPat
+    visAPName, invisAPName,
     -- FieldPat
     fieldPatName,
     -- Match
@@ -158,7 +160,8 @@ templateHaskellNames = [
     liftClassName, quoteClassName,
 
     -- And the tycons
-    qTyConName, nameTyConName, patTyConName, fieldPatTyConName, matchTyConName,
+    qTyConName, nameTyConName, patTyConName, argPatTyConName,
+    fieldPatTyConName, matchTyConName,
     expQTyConName, fieldExpTyConName, predTyConName,
     stmtTyConName,  decsTyConName, conTyConName, bangTypeTyConName,
     varBangTypeTyConName, typeQTyConName, expTyConName, decTyConName,
@@ -203,7 +206,7 @@ liftClassName = thCls (fsLit "Lift") liftClassKey
 quoteClassName :: Name
 quoteClassName = thCls (fsLit "Quote") quoteClassKey
 
-qTyConName, nameTyConName, fieldExpTyConName, patTyConName,
+qTyConName, nameTyConName, fieldExpTyConName, patTyConName, argPatTyConName,
     fieldPatTyConName, expTyConName, decTyConName, typeTyConName,
     matchTyConName, clauseTyConName, funDepTyConName, predTyConName,
     codeTyConName, injAnnTyConName, overlapTyConName, decsTyConName,
@@ -212,6 +215,7 @@ qTyConName             = thTc (fsLit "Q")              qTyConKey
 nameTyConName          = thTc (fsLit "Name")           nameTyConKey
 fieldExpTyConName      = thTc (fsLit "FieldExp")       fieldExpTyConKey
 patTyConName           = thTc (fsLit "Pat")            patTyConKey
+argPatTyConName        = thTc (fsLit "ArgPat")         argPatTyConKey
 fieldPatTyConName      = thTc (fsLit "FieldPat")       fieldPatTyConKey
 expTyConName           = thTc (fsLit "Exp")            expTyConKey
 decTyConName           = thTc (fsLit "Dec")            decTyConKey
@@ -287,6 +291,12 @@ listPName  = libFun (fsLit "listP")  listPIdKey
 sigPName   = libFun (fsLit "sigP")   sigPIdKey
 viewPName  = libFun (fsLit "viewP")  viewPIdKey
 typePName  = libFun (fsLit "typeP")  typePIdKey
+
+-- data ArgPat = ...
+visAPName, invisAPName :: Name
+
+visAPName   = libFun (fsLit "visAP")  visAPIdKey
+invisAPName = libFun (fsLit "invisAP")  invisAPIdKey
 
 -- type FieldPat = ...
 fieldPatName :: Name
@@ -676,7 +686,7 @@ quoteClassKey = mkPreludeClassUnique 201
 -- Check in GHC.Builtin.Names if you want to change this
 
 expTyConKey, matchTyConKey, clauseTyConKey, qTyConKey, expQTyConKey,
-    patTyConKey,
+    patTyConKey, argPatTyConKey,
     stmtTyConKey, conTyConKey, typeQTyConKey, typeTyConKey,
     tyVarBndrUnitTyConKey, tyVarBndrSpecTyConKey, tyVarBndrVisTyConKey,
     decTyConKey, bangTypeTyConKey, varBangTypeTyConKey,
@@ -692,6 +702,7 @@ clauseTyConKey          = mkPreludeTyConUnique 202
 qTyConKey               = mkPreludeTyConUnique 203
 expQTyConKey            = mkPreludeTyConUnique 204
 patTyConKey             = mkPreludeTyConUnique 206
+argPatTyConKey          = mkPreludeTyConUnique 207
 stmtTyConKey            = mkPreludeTyConUnique 209
 conTyConKey             = mkPreludeTyConUnique 210
 typeQTyConKey           = mkPreludeTyConUnique 211
@@ -829,6 +840,12 @@ listPIdKey        = mkPreludeMiscIdUnique 252
 sigPIdKey         = mkPreludeMiscIdUnique 253
 viewPIdKey        = mkPreludeMiscIdUnique 254
 typePIdKey        = mkPreludeMiscIdUnique 255
+
+-- data ArgPat = ...
+
+visAPIdKey, invisAPIdKey :: Unique
+visAPIdKey        = mkPreludeMiscIdUnique 256
+invisAPIdKey      = mkPreludeMiscIdUnique 257
 
 -- type FieldPat = ...
 fieldPatIdKey :: Unique

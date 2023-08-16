@@ -21,7 +21,7 @@
 -}
 
 module GHC.Hs.Pat (
-        Pat(..), LPat,
+        Pat(..), LPat, ArgPat(..), LArgPat, mapVisPat,
         EpAnnSumPat(..),
         ConPatTc (..),
         ConLikeP,
@@ -37,17 +37,19 @@ module GHC.Hs.Pat (
         hsRecFields, hsRecFieldSel, hsRecFieldId, hsRecFieldsArgs,
         hsRecUpdFieldId, hsRecUpdFieldOcc, hsRecUpdFieldRdr,
 
-        mkPrefixConPat, mkCharLitPat, mkNilPat,
+        mkPrefixConPat, mkCharLitPat, mkNilPat, mkVisPat,
+
+        expectVisPats,
 
         isSimplePat,
         looksLazyPatBind,
         isBangedLPat,
-        gParPat, patNeedsParens, parenthesizePat,
+        gParPat, patNeedsParens, parenthesizePat, parenthesizeLArgPat,
         isIrrefutableHsPat, isBoringHsPat,
 
         collectEvVarsPat, collectEvVarsPats,
 
-        pprParendLPat, pprConArgs,
+        pprParendLArgPat, pprParendLPat, pprConArgs,
         pprLPat
     ) where
 
@@ -83,6 +85,8 @@ import GHC.Data.Bag -- collect ev vars from pats
 import GHC.Data.Maybe
 import GHC.Types.Name (Name, dataName)
 import Data.Data
+import GHC.Utils.Panic.Plain (panic)
+import GHC.Utils.Misc (HasCallStack)
 
 
 type instance XWildPat GhcPs = NoExtField
@@ -173,6 +177,14 @@ type instance ConLikeP GhcRn = Name    -- IdP GhcRn
 type instance ConLikeP GhcTc = ConLike
 
 type instance XHsFieldBind _ = EpAnn [AddEpAnn]
+
+type instance XVisPat (GhcPass _) = NoExtField
+
+type instance XInvisPat GhcPs = NoExtField
+type instance XInvisPat GhcRn = NoExtField
+type instance XInvisPat GhcTc = Type
+
+type instance XXArgPat (GhcPass _) = DataConCantHappen
 
 -- ---------------------------------------------------------------------
 
@@ -299,6 +311,15 @@ pprPatBndr var
       True -> parens (pprBndr LambdaBind var) -- Could pass the site to pprPat
                                               -- but is it worth it?
       False -> pprPrefixOcc var
+
+instance OutputableBndrId p => Outputable (ArgPat (GhcPass p)) where
+    ppr (InvisPat _ _ tvb) = char '@' <> ppr tvb
+    ppr (VisPat _ lpat)    = ppr lpat
+
+pprParendLArgPat :: (OutputableBndrId p)
+              => PprPrec -> LArgPat (GhcPass p) -> SDoc
+pprParendLArgPat p (L _ (VisPat _ lpat)) = pprParendLPat p lpat
+pprParendLArgPat _ (L _ typat)           = ppr typat
 
 pprParendLPat :: (OutputableBndrId p)
               => PprPrec -> LPat (GhcPass p) -> SDoc
@@ -437,6 +458,20 @@ mkNilPat ty = mkPrefixConPat nilDataCon [] [ty]
 mkCharLitPat :: SourceText -> Char -> LPat GhcTc
 mkCharLitPat src c = mkPrefixConPat charDataCon
                           [noLocA $ LitPat noExtField (HsCharPrim src c)] []
+
+-- | A helper function that constructs an argument pattern (LArgPat) from a pattern (LPat)
+mkVisPat :: LPat (GhcPass pass) -> LArgPat (GhcPass pass)
+mkVisPat lpat = L (getLoc lpat) (VisPat noExtField lpat)
+
+-- | A helper that unwraps LArgPat when the caller statically knows that
+-- all patterns are visible (i.e. none of them are @-patterns).
+expectVisPats :: HasCallStack => [LArgPat (GhcPass p)] -> [LPat (GhcPass p)]
+expectVisPats xs = map toLPat xs
+  where
+    toLPat :: LArgPat (GhcPass p) -> LPat (GhcPass p)
+    toLPat (L _ (VisPat _ pat))   = pat
+    toLPat (L _ (InvisPat _ _ _)) = panic "expectVisPats: unexpected invisible pattern"
+
 
 {-
 ************************************************************************
@@ -801,6 +836,15 @@ parenthesizePat p lpat@(L loc pat)
   | patNeedsParens p pat = L loc (gParPat lpat)
   | otherwise            = lpat
 
+
+parenthesizeLArgPat :: IsPass p
+                   => PprPrec
+                   -> LArgPat (GhcPass p)
+                   -> LArgPat (GhcPass p)
+parenthesizeLArgPat p (L l (VisPat x lpat)) =
+  L l (VisPat x (parenthesizePat p lpat))
+parenthesizeLArgPat _ invis         = invis
+
 {-
 % Collect all EvVars from all constructor patterns
 -}
@@ -847,6 +891,7 @@ collectEvVarsPat pat =
 -}
 
 type instance Anno (Pat (GhcPass p)) = SrcSpanAnnA
+type instance Anno (ArgPat (GhcPass p)) = SrcSpanAnnA
 type instance Anno (HsOverLit (GhcPass p)) = SrcAnn NoEpAnns
 type instance Anno ConLike = SrcSpanAnnN
 type instance Anno (HsFieldBind lhs rhs) = SrcSpanAnnA

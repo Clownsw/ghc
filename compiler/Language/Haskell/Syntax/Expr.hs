@@ -996,7 +996,7 @@ data Match p body
         m_ext :: XCMatch p body,
         m_ctxt :: HsMatchContext p,
           -- See Note [m_ctxt in Match]
-        m_pats :: [LPat p], -- The patterns
+        m_pats :: [LArgPat p], -- The patterns
         m_grhss :: (GRHSs p body)
   }
   | XMatch !(XXMatch p body)

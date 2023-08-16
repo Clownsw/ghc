@@ -1881,6 +1881,12 @@ instance Diagnostic TcRnMessage where
             | otherwise
             = text "they are not unfilled metavariables"
 
+    TcRnIllegalInvisibleTypePattern tp -> mkSimpleDecorated $
+      text "Illegal invisible type pattern:" <+> ppr tp
+
+    TcRnInvisPatWithNoForAll tp -> mkSimpleDecorated $
+      text "Invisible type pattern" <+> ppr tp <+> text "has no associated forall"
+
   diagnosticReason = \case
     TcRnUnknownMessage m
       -> diagnosticReason m
@@ -2488,6 +2494,10 @@ instance Diagnostic TcRnMessage where
     TcRnIllegalTypeExpr{}
       -> ErrorWithoutFlag
     TcRnInvalidDefaultedTyVar{}
+      -> ErrorWithoutFlag
+    TcRnIllegalInvisibleTypePattern{}
+      -> ErrorWithoutFlag
+    TcRnInvisPatWithNoForAll{}
       -> ErrorWithoutFlag
 
   diagnosticHints = \case
@@ -3146,6 +3156,10 @@ instance Diagnostic TcRnMessage where
     TcRnIllegalTypeExpr{}
       -> noHints
     TcRnInvalidDefaultedTyVar{}
+      -> noHints
+    TcRnIllegalInvisibleTypePattern{}
+      -> [suggestExtension LangExt.TypeAbstractions]
+    TcRnInvisPatWithNoForAll{}
       -> noHints
 
   diagnosticCode = constructorCode

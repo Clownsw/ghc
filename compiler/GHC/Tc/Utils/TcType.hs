@@ -30,10 +30,10 @@ module GHC.Tc.Utils.TcType (
   ExpType(..), InferResult(..),
   ExpTypeFRR, ExpSigmaType, ExpSigmaTypeFRR,
   ExpRhoType,
-  mkCheckExpType,
+  mkCheckExpType, addExpPatTypes,
   checkingExpType_maybe, checkingExpType,
 
-  ExpPatType(..),
+  ExpPatType(..), ExpPatTypeVis(..),
 
   SyntaxOpType(..), synKnownType, mkSynFunTys,
 
@@ -394,7 +394,9 @@ type TcDTyCoVarSet  = DTyCoVarSet
 
 -- | An expected type to check against during type-checking.
 -- See Note [ExpType] in "GHC.Tc.Utils.TcMType", where you'll also find manipulators.
-data ExpType = Check TcType
+data ExpType = Check [ExpPatType] TcType
+                    -- Why `[ExpPatType]` is here?
+                    -- See Note [Type-checking invisible type patterns: check mode] in GHC.Tc.Gen.Pat
              | Infer !InferResult
 
 data InferResult
@@ -433,7 +435,7 @@ type ExpSigmaTypeFRR = ExpTypeFRR
 type ExpRhoType      = ExpType
 
 instance Outputable ExpType where
-  ppr (Check ty) = text "Check" <> braces (ppr ty)
+  ppr (Check _ ty) = text "Check" <> braces (ppr ty)
   ppr (Infer ir) = ppr ir
 
 instance Outputable InferResult where
@@ -446,27 +448,35 @@ instance Outputable InferResult where
 
 -- | Make an 'ExpType' suitable for checking.
 mkCheckExpType :: TcType -> ExpType
-mkCheckExpType = Check
+mkCheckExpType = Check []
+
+addExpPatTypes :: [ExpPatType] -> ExpType -> ExpType
+addExpPatTypes pat_tys1 (Check pat_tys2 ty) = Check (pat_tys1 ++ pat_tys2) ty
+addExpPatTypes _        exp_ty              = exp_ty
 
 -- | Returns the expected type when in checking mode.
 checkingExpType_maybe :: ExpType -> Maybe TcType
-checkingExpType_maybe (Check ty) = Just ty
+checkingExpType_maybe (Check _ ty) = Just ty
 checkingExpType_maybe (Infer {}) = Nothing
 
 -- | Returns the expected type when in checking mode. Panics if in inference
 -- mode.
 checkingExpType :: String -> ExpType -> TcType
-checkingExpType _   (Check ty) = ty
+checkingExpType _   (Check _ ty) = ty
 checkingExpType err et         = pprPanic "checkingExpType" (text err $$ ppr et)
 
 -- Expected type of a pattern in a lambda or a function left-hand side.
 data ExpPatType =
     ExpFunPatTy    (Scaled ExpSigmaTypeFRR)   -- the type A of a function A -> B
-  | ExpForAllPatTy TcTyVar                    -- the binder (a::A) of forall (a::A) -> B
+  | ExpForAllPatTy ExpPatTypeVis TcTyVar      -- the binder (a::A) of forall (a::A) -> B
+                                              -- or        @(a::A) of forall (a::A). B
+                                              -- Depend on ExpPatTypeVis flag
+
+data ExpPatTypeVis = InvisPatTy | VisPatTy
 
 instance Outputable ExpPatType where
   ppr (ExpFunPatTy t) = ppr t
-  ppr (ExpForAllPatTy tv) = text "forall" <+> ppr tv
+  ppr (ExpForAllPatTy _ tv) = text "forall" <+> ppr tv
 
 {- *********************************************************************
 *                                                                      *
@@ -1878,7 +1888,7 @@ isRhoTy _                            = True
 
 -- | Like 'isRhoTy', but also says 'True' for 'Infer' types
 isRhoExpTy :: ExpType -> Bool
-isRhoExpTy (Check ty) = isRhoTy ty
+isRhoExpTy (Check _ ty) = isRhoTy ty
 isRhoExpTy (Infer {}) = True
 
 isOverloadedTy :: Type -> Bool
