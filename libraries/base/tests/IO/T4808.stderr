@@ -1,1 +1,19 @@
 T4808: T4808.test: hGetLine: illegal operation (handle is closed)
+While handling: illegal operation (handle is closed)
+HasCallStack backtrace:
+CallStack (from HasCallStack):
+  collectBacktraces, called at libraries/base/GHC/Exception.hs:67:13 in base:GHC.Exception
+  toExceptionWithBacktrace, called at libraries/base/GHC/IO.hs:278:11 in base:GHC.IO
+  throwIO, called at libraries/base/GHC/IO/Exception.hs:310:19 in base:GHC.IO.Exception
+  ioException, called at libraries/base/GHC/IO/Handle/Internals.hs:340:20 in base:GHC.IO.Handle.Internals
+
+
+HasCallStack backtrace:
+CallStack (from HasCallStack):
+  collectBacktraces, called at libraries/base/GHC/Exception.hs:67:13 in base:GHC.Exception
+  toExceptionWithBacktrace, called at libraries/base/GHC/IO.hs:278:11 in base:GHC.IO
+  throwIO, called at libraries/base/GHC/IO/Exception.hs:310:19 in base:GHC.IO.Exception
+  ioException, called at libraries/base/GHC/IO/Exception.hs:314:20 in base:GHC.IO.Exception
+  ioError, called at libraries/base/GHC/IO/Handle/Internals.hs:181:13 in base:GHC.IO.Handle.Internals
+
+

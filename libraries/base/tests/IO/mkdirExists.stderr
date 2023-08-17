@@ -1,1 +1,10 @@
 mkdirExists: foo: createDirectory: already exists (File exists)
+HasCallStack backtrace:
+CallStack (from HasCallStack):
+  collectBacktraces, called at libraries/base/GHC/Exception.hs:67:13 in base:GHC.Exception
+  toExceptionWithBacktrace, called at libraries/base/GHC/IO.hs:278:11 in base:GHC.IO
+  throwIO, called at libraries/base/GHC/IO/Exception.hs:310:19 in base:GHC.IO.Exception
+  ioException, called at libraries/base/GHC/IO/Exception.hs:314:20 in base:GHC.IO.Exception
+  ioError, called at libraries/unix/System/Posix/PosixPath/FilePath.hsc:96:5 in unix-2.8.1.0-inplace:System.Posix.PosixPath.FilePath
+
+

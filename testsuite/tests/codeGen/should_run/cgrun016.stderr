@@ -1,3 +1,19 @@
 cgrun016: 6th call to error
-CallStack (from ImplicitParams):
+CallStack (from HasCallStack):
   error, called at cgrun016.hs:8:8 in main:Main
+While handling: 6th call to error
+CallStack (from HasCallStack):
+  error, called at cgrun016.hs:8:8 in main:Main
+While handling: 6th call to error
+CallStack (from HasCallStack):
+  error, called at cgrun016.hs:8:8 in main:Main
+HasCallStack backtrace:
+CallStack (from HasCallStack):
+  collectBacktraces, called at libraries/base/GHC/Exception.hs:67:13 in base:GHC.Exception
+  toExceptionWithBacktrace, called at libraries/base/GHC/Exception.hs:103:3 in base:GHC.Exception
+
+
+
+
+
+

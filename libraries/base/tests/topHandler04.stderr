@@ -1,2 +1,9 @@
 topHandler04: error
 out-of-band
+HasCallStack backtrace:
+CallStack (from HasCallStack):
+  collectBacktraces, called at libraries/base/GHC/Exception.hs:67:13 in base:GHC.Exception
+  toExceptionWithBacktrace, called at libraries/base/GHC/Exception.hs:60:32 in base:GHC.Exception
+  throw, called at topHandler04.hs:5:8 in main:Main
+
+

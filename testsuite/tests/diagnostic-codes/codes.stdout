@@ -72,6 +72,7 @@
 [GHC-16409] is untested (constructor = TcRnMultipleConForNewtype)
 [GHC-54478] is untested (constructor = TcRnRedundantSourceImport)
 [GHC-78448] is untested (constructor = TcRnIllegalDataCon)
+[GHC-46235] is untested (constructor = TcRnDefaultedExceptionContext)
 [GHC-44990] is untested (constructor = TcRnGhciMonadLookupFail)
 [GHC-77343] is untested (constructor = TcRnIllegalQuasiQuotes)
 [GHC-22221] is untested (constructor = TyVarRoleMismatch)

@@ -30,3 +30,18 @@ hello, trace
 cgrun025: hello, error
 CallStack (from HasCallStack):
   error, called at cgrun025.hs:25:75 in main:Main
+While handling: __WURBLE__: getEnv: does not exist (no environment variable)
+HasCallStack backtrace:
+CallStack (from HasCallStack):
+  collectBacktraces, called at libraries/base/GHC/Exception.hs:67:13 in base:GHC.Exception
+  toExceptionWithBacktrace, called at libraries/base/GHC/IO.hs:278:11 in base:GHC.IO
+  throwIO, called at libraries/base/GHC/IO/Exception.hs:310:19 in base:GHC.IO.Exception
+  ioException, called at libraries/base/System/Environment.hs:189:26 in base:System.Environment
+
+
+HasCallStack backtrace:
+CallStack (from HasCallStack):
+  collectBacktraces, called at libraries/base/GHC/Exception.hs:67:13 in base:GHC.Exception
+  toExceptionWithBacktrace, called at libraries/base/GHC/Exception.hs:103:3 in base:GHC.Exception
+
+

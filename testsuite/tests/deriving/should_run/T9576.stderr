@@ -1,4 +1,4 @@
-T9576.exe: T9576.hs:6:31: error: [GHC-39999]
+T9576: T9576.hs:6:31: error: [GHC-39999]
     • No instance for ‘Show Foo’ arising from a use of ‘showsPrec’
     • In the second argument of ‘(.)’, namely ‘(showsPrec 11 b1)’
       In the second argument of ‘showParen’, namely
@@ -9,3 +9,10 @@ T9576.exe: T9576.hs:6:31: error: [GHC-39999]
         in a derived instance for ‘Show Bar’:
         To see the code I am typechecking, use -ddump-deriv
 (deferred type error)
+HasCallStack backtrace:
+CallStack (from HasCallStack):
+  collectBacktraces, called at libraries/base/GHC/Exception.hs:67:13 in base:GHC.Exception
+  toExceptionWithBacktrace, called at libraries/base/GHC/Exception.hs:60:32 in base:GHC.Exception
+  throw, called at libraries/base/Control/Exception/Base.hs:423:30 in base:Control.Exception.Base
+
+

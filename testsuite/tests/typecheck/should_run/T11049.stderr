@@ -1,1 +1,7 @@
 T11049: look ma, no stack!
+HasCallStack backtrace:
+CallStack (from HasCallStack):
+  collectBacktraces, called at libraries/base/GHC/Exception.hs:67:13 in base:GHC.Exception
+  toExceptionWithBacktrace, called at libraries/base/GHC/Exception.hs:103:3 in base:GHC.Exception
+
+

@@ -1,7 +1,14 @@
-T13838.exe: T13838.hs:6:1: error: [GHC-83865]
+T13838: T13838.hs:6:1: error: [GHC-83865]
     • Couldn't match expected type: IO t0
                   with actual type: () -> ()
     • Probable cause: ‘main’ is applied to too few arguments
       In the expression: main
       When checking the type of the IO action ‘main’
 (deferred type error)
+HasCallStack backtrace:
+CallStack (from HasCallStack):
+  collectBacktraces, called at libraries/base/GHC/Exception.hs:67:13 in base:GHC.Exception
+  toExceptionWithBacktrace, called at libraries/base/GHC/Exception.hs:60:32 in base:GHC.Exception
+  throw, called at libraries/base/Control/Exception/Base.hs:423:30 in base:Control.Exception.Base
+
+

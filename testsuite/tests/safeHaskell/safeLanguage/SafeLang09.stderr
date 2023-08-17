@@ -1,3 +1,9 @@
 SafeLang09: This curry is poisoned!
-CallStack (from ImplicitParams):
+CallStack (from HasCallStack):
   error, called at ./SafeLang09_B.hs:14:13 in main:SafeLang09_B
+HasCallStack backtrace:
+CallStack (from HasCallStack):
+  collectBacktraces, called at libraries/base/GHC/Exception.hs:67:13 in base:GHC.Exception
+  toExceptionWithBacktrace, called at libraries/base/GHC/Exception.hs:103:3 in base:GHC.Exception
+
+

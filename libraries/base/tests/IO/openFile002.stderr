@@ -1,1 +1,23 @@
 openFile002: nonexistent: openFile: does not exist (No such file or directory)
+While handling: openFile: does not exist (No such file or directory)
+While handling: openFile: does not exist (No such file or directory)
+HasCallStack backtrace:
+CallStack (from HasCallStack):
+  collectBacktraces, called at libraries/base/GHC/Exception.hs:67:13 in base:GHC.Exception
+  toExceptionWithBacktrace, called at libraries/base/GHC/IO.hs:278:11 in base:GHC.IO
+  throwIO, called at libraries/base/GHC/IO/Exception.hs:310:19 in base:GHC.IO.Exception
+  ioException, called at libraries/base/GHC/IO/Exception.hs:314:20 in base:GHC.IO.Exception
+  ioError, called at libraries/base/Foreign/C/Error.hs:288:5 in base:Foreign.C.Error
+
+
+
+
+HasCallStack backtrace:
+CallStack (from HasCallStack):
+  collectBacktraces, called at libraries/base/GHC/Exception.hs:67:13 in base:GHC.Exception
+  toExceptionWithBacktrace, called at libraries/base/GHC/IO.hs:278:11 in base:GHC.IO
+  throwIO, called at libraries/base/GHC/IO/Exception.hs:310:19 in base:GHC.IO.Exception
+  ioException, called at libraries/base/GHC/IO/Exception.hs:314:20 in base:GHC.IO.Exception
+  ioError, called at libraries/base/GHC/IO/Handle/FD.hs:154:12 in base:GHC.IO.Handle.FD
+
+

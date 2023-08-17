@@ -1,3 +1,9 @@
 T21694a: Urkh! But expected!
 CallStack (from HasCallStack):
-  error, called at T21694a.hs:23:33 in main:Main
+  error, called at T21694a.hs:24:33 in main:Main
+HasCallStack backtrace:
+CallStack (from HasCallStack):
+  collectBacktraces, called at libraries/base/GHC/Exception.hs:67:13 in base:GHC.Exception
+  toExceptionWithBacktrace, called at libraries/base/GHC/Exception.hs:103:3 in base:GHC.Exception
+
+

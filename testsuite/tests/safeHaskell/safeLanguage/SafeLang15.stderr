@@ -1,2 +1,9 @@
 SafeLang15: SafeLang15.hs:22:9-37: Non-exhaustive patterns in Just p'
 
+HasCallStack backtrace:
+CallStack (from HasCallStack):
+  collectBacktraces, called at libraries/base/GHC/Exception.hs:67:13 in base:GHC.Exception
+  toExceptionWithBacktrace, called at libraries/base/GHC/Exception.hs:60:32 in base:GHC.Exception
+  throw, called at libraries/base/Control/Exception/Base.hs:422:30 in base:Control.Exception.Base
+
+

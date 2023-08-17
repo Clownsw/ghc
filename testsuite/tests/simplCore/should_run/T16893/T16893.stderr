@@ -1,3 +1,9 @@
 T16893: Prelude.undefined
 CallStack (from HasCallStack):
   undefined, called at ./Complex.hs:47:28 in main:Complex
+HasCallStack backtrace:
+CallStack (from HasCallStack):
+  collectBacktraces, called at libraries/base/GHC/Exception.hs:67:13 in base:GHC.Exception
+  toExceptionWithBacktrace, called at libraries/base/GHC/Exception.hs:103:3 in base:GHC.Exception
+
+

@@ -1,5 +1,12 @@
-T10284.exe: T10284.hs:7:5: error: [GHC-83865]
+T10284: T10284.hs:7:5: error: [GHC-83865]
     • Couldn't match expected type ‘Int’ with actual type ‘Char’
     • In the expression: 'a'
       In an equation for ‘a’: a = 'a'
 (deferred type error)
+HasCallStack backtrace:
+CallStack (from HasCallStack):
+  collectBacktraces, called at libraries/base/GHC/Exception.hs:67:13 in base:GHC.Exception
+  toExceptionWithBacktrace, called at libraries/base/GHC/Exception.hs:60:32 in base:GHC.Exception
+  throw, called at libraries/base/Control/Exception/Base.hs:423:30 in base:Control.Exception.Base
+
+

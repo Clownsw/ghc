@@ -17,13 +17,13 @@ instance Read w => Read (Maybe w) -- Defined in ‘GHC.Read’
 instance Ord w => Ord (Maybe w) -- Defined in ‘GHC.Maybe’
 instance Show w => Show (Maybe w) -- Defined in ‘GHC.Show’
 instance Eq w => Eq (Maybe w) -- Defined in ‘GHC.Maybe’
-instance Monoid [w] -- Defined in ‘GHC.Base’
-instance Semigroup [w] -- Defined in ‘GHC.Base’
 instance Read w => Read [w] -- Defined in ‘GHC.Read’
 instance GHC.Generics.Generic [w] -- Defined in ‘GHC.Generics’
 instance Eq w => Eq [w] -- Defined in ‘GHC.Classes’
 instance Ord w => Ord [w] -- Defined in ‘GHC.Classes’
 instance Show w => Show [w] -- Defined in ‘GHC.Show’
+instance Monoid [w] -- Defined in ‘GHC.Base’
+instance Semigroup [w] -- Defined in ‘GHC.Base’
 instance [safe] MyShow w => MyShow [w]
   -- Defined at ghci064.hs:8:10
 instance GHC.Generics.Generic [T] -- Defined in ‘GHC.Generics’

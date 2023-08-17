@@ -1,3 +1,9 @@
 UnlGadt1: boom
 CallStack (from HasCallStack):
-  error, called at UnlGadt1.hs:19:13 in main:Main
+  error, called at UnlGadt1.hs:20:13 in main:Main
+HasCallStack backtrace:
+CallStack (from HasCallStack):
+  collectBacktraces, called at libraries/base/GHC/Exception.hs:67:13 in base:GHC.Exception
+  toExceptionWithBacktrace, called at libraries/base/GHC/Exception.hs:103:3 in base:GHC.Exception
+
+

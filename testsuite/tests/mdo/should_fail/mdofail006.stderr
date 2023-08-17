@@ -1,1 +1,11 @@
 mdofail006: cyclic evaluation in fixIO
+While handling: thread blocked indefinitely in an MVar operation
+
+
+HasCallStack backtrace:
+CallStack (from HasCallStack):
+  collectBacktraces, called at libraries/base/GHC/Exception.hs:67:13 in base:GHC.Exception
+  toExceptionWithBacktrace, called at libraries/base/GHC/IO.hs:278:11 in base:GHC.IO
+  throwIO, called at libraries/base/System/IO.hs:430:37 in base:System.IO
+
+
