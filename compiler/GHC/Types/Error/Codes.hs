@@ -369,6 +369,7 @@ type family GhcDiagnosticCode c = n | n -> c where
   GhcDiagnosticCode "TcRnIllegalFieldPunning"                       = 44287
   GhcDiagnosticCode "TcRnIllegalWildcardsInRecord"                  = 37132
   GhcDiagnosticCode "TcRnIllegalWildcardInType"                     = 65507
+  GhcDiagnosticCode "TcRnIllegalNamedWildcardInTypeArgument"        = 93411
   GhcDiagnosticCode "TcRnDuplicateFieldName"                        = 85524
   GhcDiagnosticCode "TcRnIllegalViewPattern"                        = 22406
   GhcDiagnosticCode "TcRnCharLiteralOutOfRange"                     = 17268

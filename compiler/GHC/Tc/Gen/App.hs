@@ -23,6 +23,7 @@ import {-# SOURCE #-} GHC.Tc.Gen.Expr( tcPolyExpr )
 import GHC.Types.Var
 import GHC.Builtin.Types ( multiplicityTy )
 import GHC.Tc.Gen.Head
+import Language.Haskell.Syntax.Basic
 import GHC.Hs
 import GHC.Tc.Errors.Types
 import GHC.Tc.Utils.Monad
@@ -51,8 +52,10 @@ import GHC.Builtin.Names
 import GHC.Driver.DynFlags
 import GHC.Types.Name
 import GHC.Types.Name.Env
+import GHC.Types.Name.Reader
 import GHC.Types.SrcLoc
 import GHC.Types.Var.Env  ( emptyTidyEnv, mkInScopeSet )
+import GHC.Types.SourceText
 import GHC.Data.Maybe
 import GHC.Utils.Misc
 import GHC.Utils.Outputable as Outputable
@@ -806,10 +809,90 @@ tcVDQ :: ConcreteTyVars              -- See Note [Representation-polymorphism ch
       -> LHsExpr GhcRn               -- Argument type
       -> TcM (TcType, TcType)
 tcVDQ conc_tvs (tvb, inner_ty) arg
-  = do { hs_ty <- case stripParensLHsExpr arg of
-           L _ (HsEmbTy _ _ hs_ty) -> return hs_ty
-           e -> failWith $ TcRnIllformedTypeArgument e
-       ; tc_inst_forall_arg conc_tvs (tvb, inner_ty) hs_ty }
+  = do { hs_wc_ty <- expr_to_type (stripParensLHsExpr arg)
+       ; tc_inst_forall_arg conc_tvs (tvb, inner_ty) hs_wc_ty }
+
+-- Convert a HsExpr into the equivalent HsType.
+-- See the "T2T-Mapping" section of GHC Proposal #281
+expr_to_type :: LHsExpr GhcRn -> TcM (LHsWcType GhcRn)
+expr_to_type earg = HsWC [] <$> go earg
+  where
+    go :: LHsExpr GhcRn -> TcM (LHsType GhcRn)
+    go (L _ (HsEmbTy _ _ t)) = unwrap_wc t
+    go (L l (HsVar _ lname)) = return (L l (HsTyVar noAnn NotPromoted lname))
+    go (L l (HsApp _ lhs rhs)) =
+      do { lhs' <- go lhs
+         ; rhs' <- go rhs
+         ; return (L l (HsAppTy noExtField lhs' rhs')) }
+    go (L l (HsAppType _ lhs at rhs)) =
+      do { lhs' <- go lhs
+         ; rhs' <- unwrap_wc rhs
+         ; return (L l (HsAppKindTy noExtField lhs' at rhs')) }
+    go (L l e@(OpApp _ lhs op rhs)) =
+      do { lhs' <- go lhs
+         ; op'  <- go op
+         ; rhs' <- go rhs
+         ; op_id <- unwrap_op_tv op'
+         ; return (L l (HsOpTy noAnn NotPromoted lhs' op_id rhs')) }
+      where
+        unwrap_op_tv (L _ (HsTyVar _ _ op_id)) = return op_id
+        unwrap_op_tv _ = failWith $ TcRnIllformedTypeArgument (L l e)
+    go (L l e@(HsOverLit _ lit)) =
+      do { tylit <- case ol_val lit of
+             HsIntegral   n -> return $ HsNumTy NoSourceText (il_value n)
+             HsIsString _ s -> return $ HsStrTy NoSourceText s
+             HsFractional _ -> failWith $ TcRnIllformedTypeArgument (L l e)
+         ; return (L l (HsTyLit noExtField tylit)) }
+    go (L l e@(HsLit _ lit)) =
+      do { tylit <- case lit of
+             HsChar   _ c -> return $ HsCharTy NoSourceText c
+             HsString _ s -> return $ HsStrTy  NoSourceText s
+             _ -> failWith $ TcRnIllformedTypeArgument (L l e)
+         ; return (L l (HsTyLit noExtField tylit)) }
+    go (L l (ExplicitTuple _ tup_args Boxed))
+      | Just es <- tupArgsPresent_maybe tup_args
+      = do { ts <- traverse go es
+           ; return (L l (HsExplicitTupleTy noExtField ts)) }
+    go (L l (ExplicitList _ es)) =
+      do { ts <- traverse go es
+         ; return (L l (HsExplicitListTy noExtField NotPromoted ts)) }
+    go (L l (ExprWithTySig _ e sig_ty)) =
+      do { t <- go e
+         ; sig_ki <- unwrap_sig <$> unwrap_wc sig_ty
+         ; return (L l (HsKindSig noAnn t sig_ki)) }
+      where
+        unwrap_sig :: LHsSigType GhcRn -> LHsType GhcRn
+        unwrap_sig (L _ (HsSig _ HsOuterImplicit{} body)) = body
+        unwrap_sig (L l (HsSig _ HsOuterExplicit{hso_bndrs=bndrs} body)) =
+          L l (HsForAllTy noExtField (HsForAllInvis noAnn bndrs) body)
+    go (L l (HsPar _ _ e _)) =
+      do { t <- go e
+         ; return (L l (HsParTy noAnn t)) }
+    go (L l (HsUntypedSplice splice_result splice))
+      | HsUntypedSpliceTop finalizers e <- splice_result
+      = do { t <- go (L l e)
+           ; let splice_result' = HsUntypedSpliceTop finalizers t
+           ; return (L l (HsSpliceTy splice_result' splice)) }
+    go (L l (HsUnboundVar _ rdr))
+      | isUnderscore occ = return (L l (HsWildCardTy noExtField))
+      | startsWithUnderscore occ =
+          do { wildcards_enabled <- xoptM LangExt.NamedWildCards
+             ; if wildcards_enabled
+               then illegal_wc rdr
+               else not_in_scope }
+      | otherwise = not_in_scope
+      where occ = occName rdr
+            not_in_scope = failWith $ mkTcRnNotInScope rdr NotInScope
+    go (L l (XExpr (HsExpanded orig _))) = go (L l orig)
+    go e = failWith $ TcRnIllformedTypeArgument e
+
+    unwrap_wc :: HsWildCardBndrs GhcRn t -> TcM t
+    unwrap_wc (HsWC wcs t)
+      = do { mapM_ (illegal_wc . nameRdrName) wcs
+           ; return t }
+
+    illegal_wc :: RdrName -> TcM t
+    illegal_wc rdr = failWith $ TcRnIllegalNamedWildcardInTypeArgument rdr
 
 tc_inst_forall_arg :: ConcreteTyVars            -- See Note [Representation-polymorphism checking built-ins]
                    -> (ForAllTyBinder, TcType)  -- Function type
@@ -890,7 +973,7 @@ At a call site we may have calls looking like this
     fs             True  -- Specified: type argument omitted
     fs      @Bool  True  -- Specified: type argument supplied
     fr (type Bool) True  -- Required: type argument is compulsory, `type` qualifier used
-    fr       Bool  True  -- Required: type argument is compulsory, `type` qualifier omitted (NB: not implemented)
+    fr       Bool  True  -- Required: type argument is compulsory, `type` qualifier omitted
 
 At definition sites we may have type /patterns/ to abstract over type variables
    fi           x       = rhs   -- Inferred: no type pattern
@@ -953,8 +1036,8 @@ Syntax of applications in HsExpr
 
   Why the difference?  Because we /also/ need to express these /nested/ uses of `type`:
 
-      g (Maybe (type Int))               -- valid for g :: forall (a :: Type) -> t     (NB. not implemented)
-      g (Either (type Int) (type Bool))  -- valid for g :: forall (a :: Type) -> t     (NB. not implemented)
+      g (Maybe (type Int))               -- valid for g :: forall (a :: Type) -> t
+      g (Either (type Int) (type Bool))  -- valid for g :: forall (a :: Type) -> t
 
   This nesting makes `type` rather different from `@`. Remember, the HsEmbTy mainly just
   switches namespace, and is subject to the term-to-type transformation.
@@ -993,7 +1076,7 @@ rnExpr delegates renaming of type arguments to rnHsWcType if possible:
     f (type t)  -- HsApp and HsEmbTy, t is renamed with rnHsWcType
 
 But what about:
-    f t         -- HsApp, no HsEmbTy      (NB. not implemented)
+    f t         -- HsApp, no HsEmbTy
 We simply rename `t` as a term using a recursive call to rnExpr; in particular,
 the type of `f` does not affect name resolution (Lexical Scoping Principle).
 We will later convert `t` from a `HsExpr` to a `Type`, see "Typechecking type
@@ -1057,7 +1140,7 @@ This is done by tcVTA (if Specified) and tcVDQ (if Required).
 tcVDQ unwraps the HsEmbTy and uses the type contained within it.  Crucially, in
 tcVDQ we know that we are expecting a type argument.  This means that we can
 support
-    f (Maybe Int)   -- HsApp, no HsEmbTy      (NB. not implemented)
+    f (Maybe Int)   -- HsApp, no HsEmbTy
 The type argument (Maybe Int) is represented as an HsExpr, but tcVDQ can easily
 convert it to HsType.  This conversion is called the "T2T-Mapping" in GHC
 Proposal #281.
