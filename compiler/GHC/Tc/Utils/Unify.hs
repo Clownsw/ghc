@@ -375,8 +375,8 @@ matchExpectedFunTys :: forall a.
                        ExpectedFunTyOrigin -- See Note [Herald for matchExpectedFunTys]
                     -> UserTypeCtxt
                     -> Arity
-                    -> ExpRhoType      -- Skolemised
-                    -> ([ExpPatType] -> ExpRhoType -> TcM a)
+                    -> ExpSigmaType
+                    -> ([ExpPatType] -> ExpSigmaType -> TcM a)
                     -> TcM (HsWrapper, a)
 -- If    matchExpectedFunTys n ty = (wrap, _)
 -- then  wrap : (t1 -> ... -> tn -> ty_r) ~> ty,
@@ -386,8 +386,8 @@ matchExpectedFunTys herald ctx arity orig_ty thing_inside
       Check ty -> go [] arity ty
       _        -> defer [] arity orig_ty
   where
-    -- Skolemise any /invisible/ foralls /before/ the zero-arg case
-    -- so that we guarantee to return a rho-type
+
+    -- Skolemise any /invisible/ foralls, before 0-arity case
     go acc_arg_tys n ty
       | (tvs, theta, _) <- tcSplitSigmaTy ty  -- Invisible binders only!
       , not (null tvs && null theta)          -- Visible ones handled below
@@ -1525,7 +1525,7 @@ tcSkolemiseScoped ctxt expected_ty thing_inside
        ; let skol_tvs = map snd tv_prs
        ; (ev_binds, res)
              <- checkConstraints (getSkolemInfo skol_info) skol_tvs given $
-                tcExtendNameTyVarEnv tv_prs               $
+                tcExtendNameTyVarEnv tv_prs                               $
                 thing_inside rho_ty
 
        ; return (wrap <.> mkWpLet ev_binds, res) }

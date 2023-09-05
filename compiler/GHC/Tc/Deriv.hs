@@ -1893,6 +1893,8 @@ genInstBinds spec@(DS { ds_tvs = tyvars, ds_mechanism = mechanism
           -- Skip unboxed tuples checking for derived instances when imported
           -- in a different module, see #20524
         , LangExt.UnboxedTuples
+          -- Enable eager skolemisation to bring type variable into scope
+        , LangExt.ScopedTypeVariables
         ]
       | otherwise
       = []

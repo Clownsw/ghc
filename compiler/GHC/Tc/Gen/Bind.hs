@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE MultiWayIf #-}
 
 {-
 (c) The University of Glasgow 2006
@@ -610,27 +611,14 @@ tcPolyCheck prag_fn
             (CompleteSig { sig_bndr  = poly_id
                          , sig_ctxt  = ctxt
                          , sig_loc   = sig_loc })
-            (L bind_loc (FunBind { fun_id = L nm_loc name
+            (L bind_loc (FunBind { fun_id = lname@(L nm_loc name)
                                  , fun_matches = matches }))
   = do { traceTc "tcPolyCheck" (ppr poly_id $$ ppr sig_loc)
 
        ; mono_name <- newNameAt (nameOccName name) (locA nm_loc)
        ; (wrap_gen, (wrap_res, matches'))
              <- setSrcSpan sig_loc $ -- Sets the binding location for the skolems
-                tcSkolemiseScoped ctxt (idType poly_id) $ \rho_ty ->
-                -- Unwraps multiple layers; e.g
-                --    f :: forall a. Eq a => forall b. Ord b => blah
-                -- NB: tcSkolemiseScoped makes fresh type variables
-                -- See Note [Instantiate sig with fresh variables]
-
-                let mono_id = mkLocalId mono_name (varMult poly_id) rho_ty in
-                tcExtendBinderStack [TcIdBndr mono_id NotTopLevel] $
-                -- Why mono_id in the BinderStack?
-                --    See Note [Relevant bindings and the binder stack]
-
-                setSrcSpanA bind_loc $
-                tcMatchesFun (L nm_loc (idName mono_id)) matches
-                             (mkCheckExpType rho_ty)
+                tc_matches_fun_check ctxt bind_loc lname poly_id matches
 
        -- We make a funny AbsBinds, abstracting over nothing,
        -- just so we have somewhere to put the SpecPrags.
@@ -668,6 +656,42 @@ tcPolyCheck prag_fn
 
 tcPolyCheck _prag_fn sig bind
   = pprPanic "tcPolyCheck" (ppr sig $$ ppr bind)
+
+
+tc_matches_fun_check :: UserTypeCtxt
+                     -> SrcSpanAnnA
+                     -> LocatedN Name
+                     -> TcId
+                     -> MatchGroup GhcRn (LHsExpr GhcRn)
+                     -> TcM (HsWrapper, (HsWrapper, MatchGroup GhcTc (LHsExpr GhcTc)))
+tc_matches_fun_check  ctxt bind_loc  (L nm_loc name) poly_id matches = do
+  scope_forall <- xoptM LangExt.ScopedTypeVariables
+  if | not scope_forall -> lazy_skolemisation_way
+     | otherwise        -> eager_skolemisation_way
+  where
+    lazy_skolemisation_way = do
+      new_poly_name <- newNameAt (nameOccName name) (locA nm_loc)
+      res <- setSrcSpanA bind_loc $
+        tcMatchesFun (L nm_loc new_poly_name) matches
+                      (mkCheckExpType (idType poly_id))
+      pure (idHsWrapper, res)
+
+    eager_skolemisation_way = do
+      mono_name <- newNameAt (nameOccName name) (locA nm_loc)
+      tcSkolemiseScoped ctxt (idType poly_id) $ \rho_ty ->
+        -- Unwraps multiple layers; e.g
+        --    f :: forall a. Eq a => forall b. Ord b => blah
+        -- NB: tcSkolemiseScoped makes fresh type variables
+        -- See Note [Instantiate sig with fresh variables]
+
+        let mono_id = mkLocalId mono_name (varMult poly_id) rho_ty in
+        tcExtendBinderStack [TcIdBndr mono_id NotTopLevel] $
+        -- Why mono_id in the BinderStack?
+        --    See Note [Relevant bindings and the binder stack]
+
+        setSrcSpanA bind_loc $
+        tcMatchesFun (L nm_loc mono_name) matches
+                      (mkCheckExpType rho_ty)
 
 funBindTicks :: SrcSpan -> TcId -> Module -> [LSig GhcRn]
              -> TcM [CoreTickish]

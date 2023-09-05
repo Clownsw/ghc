@@ -20,7 +20,7 @@ module GHC.Tc.Gen.Expr
          tcCheckMonoExpr, tcCheckMonoExprNC,
          tcMonoExpr, tcMonoExprNC,
          tcInferRho, tcInferRhoNC,
-         tcPolyExpr, tcExpr,
+         tcPolyLExpr, tcPolyExpr, tcExpr,
          tcSyntaxOp, tcSyntaxOpGen, SyntaxOpType(..), synKnownType,
          tcCheckId,
          ) where
@@ -177,6 +177,25 @@ tcInferRhoNC (L loc expr)
 ********************************************************************* -}
 
 tcPolyExpr :: HsExpr GhcRn -> ExpSigmaType -> TcM (HsExpr GhcTc)
+tcPolyExpr (HsPar x lpar expr rpar) res_ty
+  = do { expr' <- tcPolyLExprNC expr res_ty
+       ; return (HsPar x lpar expr' rpar) }
+
+tcPolyExpr (HsLam _ match) res_ty
+  = do  { (wrap, match') <- tcMatchLambda herald match_ctxt match res_ty
+        ; return (mkHsWrap wrap (HsLam noExtField match')) }
+  where
+    match_ctxt = MC { mc_what = LambdaExpr, mc_body = tcBody }
+    herald = ExpectedFunTyLam match
+
+tcPolyExpr e@(HsLamCase x lc_variant matches) res_ty
+  = do { (wrap, matches')
+           <- tcMatchLambda herald match_ctxt matches res_ty
+       ; return (mkHsWrap wrap $ HsLamCase x lc_variant matches') }
+  where
+    match_ctxt = MC { mc_what = LamCaseAlt lc_variant, mc_body = tcBody }
+    herald = ExpectedFunTyLamCase lc_variant e
+
 tcPolyExpr expr res_ty
   = do { traceTc "tcPolyExpr" (ppr res_ty)
        ; (wrap, expr') <- tcSkolemiseExpType GenSigCtxt res_ty $ \ res_ty ->

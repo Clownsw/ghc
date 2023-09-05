@@ -2,13 +2,13 @@
 T14618.hs:7:14: error: [GHC-25897]
     • Couldn't match expected type ‘b’ with actual type ‘a’
       ‘a’ is a rigid type variable bound by
-        the type signature for:
-          safeCoerce :: forall a b. a -> b
-        at T14618.hs:6:1-20
+        a type expected by the context:
+          forall a b. a -> b
+        at T14618.hs:(7,1)-(12,14)
       ‘b’ is a rigid type variable bound by
-        the type signature for:
-          safeCoerce :: forall a b. a -> b
-        at T14618.hs:6:1-20
+        a type expected by the context:
+          forall a b. a -> b
+        at T14618.hs:(7,1)-(12,14)
     • In the expression: f'
       In an equation for ‘safeCoerce’:
           safeCoerce
@@ -17,5 +17,3 @@ T14618.hs:7:14: error: [GHC-25897]
                 f :: d -> forall c. d
                 f x = x
                 f' = f
-    • Relevant bindings include
-        safeCoerce :: a -> b (bound at T14618.hs:7:1)

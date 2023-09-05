@@ -12,5 +12,3 @@ T3950.hs:16:13: error: [GHC-83865]
             where
                 rp' :: Sealed (Id p x)
                 rp' = undefined
-    • Relevant bindings include
-        rp :: Bool -> Maybe (w (Id p)) (bound at T3950.hs:16:1)

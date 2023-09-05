@@ -38,9 +38,9 @@ where
 import GHC.Prelude
 
 import {-# SOURCE #-}   GHC.Tc.Gen.Expr( tcSyntaxOp, tcInferRho, tcInferRhoNC
-                                       , tcMonoExpr, tcMonoExprNC, tcExpr
+                                       , tcMonoExprNC, tcExpr
                                        , tcCheckMonoExpr, tcCheckMonoExprNC
-                                       , tcCheckPolyExpr )
+                                       , tcCheckPolyExpr, tcPolyLExpr )
 
 import GHC.Rename.Utils ( bindLocalNames, isIrrefutableHsPatRn )
 import GHC.Tc.Errors.Types
@@ -97,7 +97,7 @@ same number of arguments before using @tcMatches@ to do the work.
 
 tcMatchesFun :: LocatedN Name -- MatchContext Id
              -> MatchGroup GhcRn (LHsExpr GhcRn)
-             -> ExpRhoType    -- Expected type of function
+             -> ExpSigmaType    -- Expected type of function
              -> TcM (HsWrapper, MatchGroup GhcTc (LHsExpr GhcTc))
                                 -- Returns type of body
 tcMatchesFun fun_name matches exp_ty
@@ -155,7 +155,7 @@ tcMatchesCase ctxt (Scaled scrut_mult scrut_ty) matches res_ty
 tcMatchLambda :: ExpectedFunTyOrigin -- see Note [Herald for matchExpectedFunTys] in GHC.Tc.Utils.Unify
               -> TcMatchCtxt HsExpr
               -> MatchGroup GhcRn (LHsExpr GhcRn)
-              -> ExpRhoType
+              -> ExpSigmaType
               -> TcM (HsWrapper, MatchGroup GhcTc (LHsExpr GhcTc))
 tcMatchLambda herald match_ctxt match res_ty
   =  do { checkArgCounts (mc_what match_ctxt) match
@@ -350,10 +350,10 @@ tcDoStmts MonadComp (L l stmts) res_ty
         ; return (HsDo res_ty MonadComp (L l stmts')) }
 tcDoStmts ctxt@GhciStmtCtxt _ _ = pprPanic "tcDoStmts" (pprHsDoFlavour ctxt)
 
-tcBody :: LHsExpr GhcRn -> ExpRhoType -> TcM (LHsExpr GhcTc)
+tcBody :: LHsExpr GhcRn -> ExpSigmaType -> TcM (LHsExpr GhcTc)
 tcBody body res_ty
   = do  { traceTc "tcBody" (ppr res_ty)
-        ; tcMonoExpr body res_ty
+        ; tcPolyLExpr body res_ty
         }
 
 {-
