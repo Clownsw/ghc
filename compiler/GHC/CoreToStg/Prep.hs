@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ViewPatterns #-}
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
@@ -97,7 +98,8 @@ The goal of this pass is to prepare for code generation.
     (The code generator can't deal with anything else.)
     Type lambdas are ok, however, because the code gen discards them.
 
-5.  [Not any more; nuked Jun 2002] Do the seq/par munging.
+5.  Flatten nested lets as much as possible.
+    See Note [Floating in CorePrep].
 
 6.  Clone all local Ids.
     This means that all such Ids are unique, rather than the
@@ -217,7 +219,7 @@ corePrepPgm logger cp_cfg pgm_cfg
         binds_out = initUs_ us $ do
                       floats1 <- corePrepTopBinds initialCorePrepEnv binds
                       floats2 <- corePrepTopBinds initialCorePrepEnv implicit_binds
-                      return (deFloatTop (floats1 `appendFloats` floats2))
+                      return (deFloatTop (floats1 `zipFloats` floats2))
 
     endPassIO logger (cpPgm_endPassConfig pgm_cfg)
               binds_out []
@@ -244,7 +246,7 @@ corePrepTopBinds initialCorePrepEnv binds
                                  -- Only join points get returned this way by
                                  -- cpeBind, and no join point may float to top
                                floatss <- go env' binds
-                               return (floats `appendFloats` floatss)
+                               return (floats `zipFloats` floatss)
 
 mkDataConWorkers :: Bool -> ModLocation -> [TyCon] -> [CoreBind]
 -- See Note [Data constructor workers]
@@ -268,7 +270,48 @@ mkDataConWorkers generate_debug_info mod_loc data_tycons
              LexicalFastString $ mkFastString $ renderWithContext defaultSDocContext $ ppr name
            span1 file = realSrcLocSpan $ mkRealSrcLoc (mkFastString file) 1 1
 
-{-
+{- Note [Floating in CorePrep]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ANFisation produces a lot of nested lets that obscures values:
+  let v = (:) (f 14) [] in e
+  ==> { ANF in CorePrep }
+  let v = let sat = f 14 in (:) sat [] in e
+Here, `v` is not a value anymore, and we'd allocate a thunk closure for `v` that
+allocates a thunk for `sat` and then allocates the cons cell.
+Very often (caveat in Wrinkle (FCP1) below), `v` is actually used and the
+allocation of the thunk closure was in vain.
+Hence we carry around a bunch of floated bindings with us so that we can leave
+behind more values:
+  let v = let sat = f 14 in (:) sat [] in e
+  ==> { Float sat }
+  let sat = f 14 in
+  let v = (:) sat [] in e
+Floating to top-level can make an asymptotic difference, because `sat` becomes
+an SAT; See Note [Floating out of top level bindings].
+For nested let bindings, we have to keep in mind Note [Core letrec invariant]
+and may exploit strict contexts; See Note [wantFloatLocal].
+
+There are 3 main categories of floats, encoded in the `FloatingBind` type:
+
+  * `Float`: A floated binding, as `sat` above.
+    These come in different flavours as described by their `FloatInfo` and
+    `BindInfo`, which captures how far the binding can be floated and whether or
+    not we want to case-bind. See Note [BindInfo and FloatInfo].
+  * `UnsafeEqualityCase`: Used for floating around unsafeEqualityProof bindings;
+    see (U3) of Note [Implementing unsafeCoerce].
+    It's simply like any other ok-for-spec-eval Float (see `mkFloat`) that has
+    a non-DEFAULT Case alternative to bind the unsafe coercion field of the Refl
+    constructor.
+  * `FloatTick`: A floated `Tick`. See Note [Floating Ticks in CorePrep].
+
+Wrinkles:
+ (FCP1)
+    Local floating as above is not necessarily an optimisation if `v` doesn't
+    up being evaluated. In that case, we allocate a 4 word closure for `v` but
+    won't need to allocate separate closures for `sat` (2 words) and the `(:)`
+    conapp (3 words), thus saving at least one word, depending on how much the
+    set of FVs between `sat` and `(:)` overlap.
+
 Note [Floating out of top level bindings]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 NB: we do need to float out of top-level bindings
@@ -557,7 +600,7 @@ cpeBind top_lvl env (NonRec bndr rhs)
              floats1 | triv_rhs, isInternalName (idName bndr)
                      = floats
                      | otherwise
-                     = addFloat floats new_float
+                     = snocFloat floats new_float
 
              new_float = mkFloat env dmd is_unlifted bndr1 rhs1
 
@@ -578,15 +621,18 @@ cpeBind top_lvl env (Rec pairs)
        ; stuff <- zipWithM (cpePair top_lvl Recursive topDmd False env')
                            bndrs1 rhss
 
-       ; let (floats_s, rhss1) = unzip stuff
-             -- Glom all floats into the Rec, *except* FloatStrings which can
-             -- (and must, because unlifted!) float further.
-             (string_floats, all_pairs) =
-               foldrOL add_float (emptyFloats, bndrs1 `zip` rhss1)
-                                 (concatFloats floats_s)
+       ; let (zipManyFloats -> floats, rhss1) = unzip stuff
+             -- Glom all floats into the Rec, *except* FloatStrings; see
+             -- see Note [ANF-ising literal string arguments], Wrinkle (FS1)
+             is_lit (Float (NonRec _ rhs) CaseBound TopLvlFloatable) = exprIsTickedString rhs
+             is_lit _                                                = False
+             (string_floats, top) = partitionOL is_lit (top_floats floats)
+             floats'   = floats { top_floats = top }
+             all_pairs = foldrOL add_float (bndrs1 `zip` rhss1) (getFloats floats')
        -- use env below, so that we reset cpe_rec_ids
        ; return (extendCorePrepEnvList env (bndrs `zip` bndrs1),
-                 string_floats `addFloat` FloatLet (Rec all_pairs),
+                 snocFloat (emptyFloats { top_floats = string_floats })
+                           (Float (Rec all_pairs) LetBound TopLvlFloatable),
                  Nothing) }
 
   | otherwise -- See Note [Join points and floating]
@@ -604,10 +650,11 @@ cpeBind top_lvl env (Rec pairs)
 
         -- Flatten all the floats, and the current
         -- group into a single giant Rec
-    add_float (FloatLet (NonRec b r)) (ss, prs2) = (ss, (b,r)    : prs2)
-    add_float (FloatLet (Rec prs1))   (ss, prs2) = (ss, prs1    ++ prs2)
-    add_float s@FloatString{}         (ss, prs2) = (addFloat ss s, prs2)
-    add_float b                       _          = pprPanic "cpeBind" (ppr b)
+    add_float (Float bind bound _) prs2
+      | bound /= CaseBound = case bind of
+          NonRec x e -> (x,e) : prs2
+          Rec prs1 -> prs1 ++ prs2
+    add_float f                       _    = pprPanic "cpeBind" (ppr f)
 
 ---------------
 cpePair :: TopLevelFlag -> RecFlag -> Demand -> Bool
@@ -620,7 +667,8 @@ cpePair top_lvl is_rec dmd is_unlifted env bndr rhs
     do { (floats1, rhs1) <- cpeRhsE env rhs
 
        -- See if we are allowed to float this stuff out of the RHS
-       ; (floats2, rhs2) <- float_from_rhs floats1 rhs1
+       ; let dec = want_float_from_rhs floats1 rhs1
+       ; (floats2, rhs2) <- executeFloatDecision dec floats1 rhs1
 
        -- Make the arity match up
        ; (floats3, rhs3)
@@ -630,7 +678,7 @@ cpePair top_lvl is_rec dmd is_unlifted env bndr rhs
                                -- Note [Silly extra arguments]
                     (do { v <- newVar (idType bndr)
                         ; let float = mkFloat env topDmd False v rhs2
-                        ; return ( addFloat floats2 float
+                        ; return ( snocFloat floats2 float
                                  , cpeEtaExpand arity (Var v)) })
 
         -- Wrap floating ticks
@@ -640,35 +688,30 @@ cpePair top_lvl is_rec dmd is_unlifted env bndr rhs
   where
     arity = idArity bndr        -- We must match this arity
 
-    ---------------------
-    float_from_rhs floats rhs
-      | isEmptyFloats floats = return (emptyFloats, rhs)
-      | isTopLevel top_lvl   = float_top    floats rhs
-      | otherwise            = float_nested floats rhs
+    want_float_from_rhs floats rhs
+      | isTopLevel top_lvl = FloatSome TopLvlFloatable
+      | otherwise          = wantFloatLocal is_rec dmd is_unlifted floats rhs
 
-    ---------------------
-    float_nested floats rhs
-      | wantFloatNested is_rec dmd is_unlifted floats rhs
-                  = return (floats, rhs)
-      | otherwise = dontFloat floats rhs
+data FloatDecision
+  = FloatNone
+  | FloatAll
+  | FloatSome !FloatInfo -- ^ Float all bindings with <= this info
 
-    ---------------------
-    float_top floats rhs
-      | allLazyTop floats
-      = return (floats, rhs)
-
-      | otherwise
-      = dontFloat floats rhs
-
-dontFloat :: Floats -> CpeRhs -> UniqSM (Floats, CpeBody)
--- Non-empty floats, but do not want to float from rhs
--- So wrap the rhs in the floats
--- But: rhs1 might have lambdas, and we can't
---      put them inside a wrapBinds
-dontFloat floats1 rhs
-  = do { (floats2, body) <- rhsToBody rhs
-        ; return (emptyFloats, wrapBinds floats1 $
-                               wrapBinds floats2 body) }
+executeFloatDecision :: FloatDecision -> Floats -> CpeRhs -> UniqSM (Floats, CpeRhs)
+executeFloatDecision dec floats rhs = do
+  let (float,stay) = case dec of
+        _ | isEmptyFloats floats -> (emptyFloats,emptyFloats)
+        FloatNone                -> (emptyFloats, floats)
+        FloatAll                 -> (floats, emptyFloats)
+        FloatSome info           -> partitionFloats info floats
+  -- Wrap `stay` around `rhs`.
+  -- NB: `rhs` might have lambdas, and we can't
+  --     put them inside a wrapBinds, which expects a `CpeBody`.
+  if isEmptyFloats stay -- Fast path where we don't need to call `rhsToBody`
+    then return (float, rhs)
+    else do
+      (floats', body) <- rhsToBody rhs
+      return (float, wrapBinds stay $ wrapBinds floats' body)
 
 {- Note [Silly extra arguments]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -754,14 +797,14 @@ cpeRhsE env (Let bind body)
        ; (body_floats, body') <- cpeRhsE env' body
        ; let expr' = case maybe_bind' of Just bind' -> Let bind' body'
                                          Nothing    -> body'
-       ; return (bind_floats `appendFloats` body_floats, expr') }
+       ; return (bind_floats `appFloats` body_floats, expr') }
 
 cpeRhsE env (Tick tickish expr)
   -- Pull out ticks if they are allowed to be floated.
   | tickishFloatable tickish
   = do { (floats, body) <- cpeRhsE env expr
          -- See [Floating Ticks in CorePrep]
-       ; return (unitFloat (FloatTick tickish) `appendFloats` floats, body) }
+       ; return (FloatTick tickish `consFloat` floats, body) }
   | otherwise
   = do { body <- cpeBodyNF env expr
        ; return (emptyFloats, mkTick tickish' body) }
@@ -805,12 +848,12 @@ cpeRhsE env (Case scrut bndr _ alts@[Alt con bs _])
        ; (floats_rhs, rhs) <- cpeBody env rhs
          -- ... but we want to float `floats_rhs` as in (U3) so that rhs' might
          -- become a value
-       ; let case_float = FloatCase scrut bndr con bs True
-         -- NB: True <=> ok-for-spec; it is OK to "evaluate" the proof eagerly.
+       ; let case_float = UnsafeEqualityCase scrut bndr con bs
+         -- NB: It is OK to "evaluate" the proof eagerly.
          --     Usually there's the danger that we float the unsafeCoerce out of
          --     a branching Case alt. Not so here, because the regular code path
          --     for `cpeRhsE Case{}` will not float out of alts.
-             floats = addFloat floats_scrut case_float `appendFloats` floats_rhs
+             floats = snocFloat floats_scrut case_float `appFloats` floats_rhs
        ; return (floats, rhs) }
 
 cpeRhsE env (Case scrut bndr ty alts)
@@ -859,7 +902,7 @@ cpeBody :: CorePrepEnv -> CoreExpr -> UniqSM (Floats, CpeBody)
 cpeBody env expr
   = do { (floats1, rhs) <- cpeRhsE env expr
        ; (floats2, body) <- rhsToBody rhs
-       ; return (floats1 `appendFloats` floats2, body) }
+       ; return (floats1 `appFloats` floats2, body) }
 
 --------
 rhsToBody :: CpeRhs -> UniqSM (Floats, CpeBody)
@@ -882,7 +925,7 @@ rhsToBody expr@(Lam {})   -- See Note [No eta reduction needed in rhsToBody]
   | otherwise                   -- Some value lambdas
   = do { let rhs = cpeEtaExpand (exprArity expr) expr
        ; fn <- newVar (exprType rhs)
-       ; let float = FloatLet (NonRec fn rhs)
+       ; let float = Float (NonRec fn rhs) LetBound TopLvlFloatable
        ; return (unitFloat float, Var fn) }
   where
     (bndrs,_) = collectBinders expr
@@ -1125,7 +1168,8 @@ cpeApp top_env expr
         :: CorePrepEnv
         -> [ArgInfo]                  -- The arguments (inner to outer)
         -> CpeApp                     -- The function
-        -> Floats
+        -> Floats                     -- INVARIANT: These floats don't bind anything that is in the CpeApp!
+                                      -- Just stuff floated out from the head of the application.
         -> [Demand]
         -> Maybe Arity
         -> UniqSM (CpeApp
@@ -1170,7 +1214,7 @@ cpeApp top_env expr
                    (ss1 : ss_rest, False) -> (ss1,    ss_rest)
                    ([],            _)     -> (topDmd, [])
         (fs, arg') <- cpeArg top_env ss1 arg
-        rebuild_app' env as (App fun' arg') (fs `appendFloats` floats) ss_rest rt_ticks (req_depth-1)
+        rebuild_app' env as (App fun' arg') (fs `zipFloats` floats) ss_rest rt_ticks (req_depth-1)
 
       CpeCast co
         -> rebuild_app' env as (Cast fun' co) floats ss rt_ticks req_depth
@@ -1182,7 +1226,7 @@ cpeApp top_env expr
            rebuild_app' env as fun' floats ss (tickish:rt_ticks) req_depth
         | otherwise
         -- See [Floating Ticks in CorePrep]
-        -> rebuild_app' env as fun' (addFloat floats (FloatTick tickish)) ss rt_ticks req_depth
+        -> rebuild_app' env as fun' (snocFloat floats (FloatTick tickish)) ss rt_ticks req_depth
 
 isLazyExpr :: CoreExpr -> Bool
 -- See Note [lazyId magic] in GHC.Types.Id.Make
@@ -1261,8 +1305,7 @@ Other relevant Notes:
  * Note [runRW arg] below, describing a non-obvious case where the
    late-inlining could go wrong.
 
-
- Note [runRW arg]
+Note [runRW arg]
 ~~~~~~~~~~~~~~~~~~~
 Consider the Core program (from #11291),
 
@@ -1293,7 +1336,6 @@ trivial, consequently cpeArg (which the catch-all case of cpe_app calls on both
 the function and the arguments) will forgo binding it to a variable. By
 contrast, in the non-bottoming case of `hello` above  the function will be
 deemed non-trivial and consequently will be case-bound.
-
 
 Note [Simplification of runRW#]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1408,8 +1450,7 @@ But with -O0, there is no FloatOut, so CorePrep must do the ANFisation to
     foo = Foo s
 
 (String literals are the only kind of binding allowed at top-level and hence
-their floats are `OkToSpec` like lifted bindings, whereas all other unlifted
-floats are `IfUnboxedOk` so that they don't float to top-level.)
+their `FloatInfo` is `TopLvlFloatable`.)
 
 This appears to lead to bad code if the arg is under a lambda, because CorePrep
 doesn't float out of RHSs, e.g., (T23270)
@@ -1432,24 +1473,13 @@ But actually, it doesn't, because "turtle"# is already an HNF. Here is the Cmm:
 
 Wrinkles:
 
-(FS1) It is crucial that we float out String literals out of RHSs that could
-      become values, e.g.,
-
-        let t = case "turtle"# of s { __DEFAULT -> MkT s }
-        in f t
-
-      where `MkT :: Addr# -> T`. We want
-
-        let s = "turtle"#; t = MkT s
-        in f t
-
-      because the former allocates an extra thunk for `t`.
-      Normally, the `case turtle# of s ...` becomes a `FloatCase` and
-      we don't float `FloatCase` outside of (recursive) RHSs, so we get the
-      former program (this is the 'allLazyNested' test in 'wantFloatNested').
-      That is what we use `FloatString` for: It is essentially a `FloatCase`
-      which is always ok-to-spec/can be regarded as a non-allocating value and
-      thus be floated aggressively to expose more value bindings.
+(FS1) We detect string literals in `cpeBind Rec{}` and float them out anyway;
+      otherwise we'd try to bind a string literal in a letrec, violating
+      Note [Core letrec invariant]. Since we know that literals don't have
+      free variables, we float further.
+      Arguably, we could just as well relax the letrec invariant for
+      string literals, or anthing that is a value (lifted or not).
+      This is tracked in #24036.
 -}
 
 -- This is where we arrange that a non-trivial argument is let-bound
@@ -1459,10 +1489,9 @@ cpeArg env dmd arg
   = do { (floats1, arg1) <- cpeRhsE env arg     -- arg1 can be a lambda
        ; let arg_ty      = exprType arg1
              is_unlifted = isUnliftedType arg_ty
-             want_float  = wantFloatNested NonRecursive dmd is_unlifted
-       ; (floats2, arg2) <- if want_float floats1 arg1
-                            then return (floats1, arg1)
-                            else dontFloat floats1 arg1
+             dec         = wantFloatLocal NonRecursive dmd is_unlifted
+                                                  floats1 arg1
+       ; (floats2, arg2) <- executeFloatDecision dec floats1 arg1
                 -- Else case: arg1 might have lambdas, and we can't
                 --            put them inside a wrapBinds
 
@@ -1475,7 +1504,7 @@ cpeArg env dmd arg
                  -- See Note [Eta expansion of arguments in CorePrep]
                  ; let arg3 = cpeEtaExpandArg env arg2
                        arg_float = mkFloat env dmd is_unlifted v arg3
-                 ; return (addFloat floats2 arg_float, varToCoreExpr v) }
+                 ; return (snocFloat floats2 arg_float, varToCoreExpr v) }
        }
 
 cpeEtaExpandArg :: CorePrepEnv -> CoreArg -> CoreArg
@@ -1507,20 +1536,6 @@ Note [Eta expansion of arguments with join heads]
 See Note [Eta expansion for join points] in GHC.Core.Opt.Arity
 Eta expanding the join point would introduce crap that we can't
 generate code for
-
-Note [Floating unlifted arguments]
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Consider    C (let v* = expensive in v)
-
-where the "*" indicates "will be demanded".  Usually v will have been
-inlined by now, but let's suppose it hasn't (see #2756).  Then we
-do *not* want to get
-
-     let v* = expensive in C v
-
-because that has different strictness.  Hence the use of 'allLazy'.
-(NB: the let v* turns into a FloatCase, in mkLocalNonRec.)
-
 
 ------------------------------------------------------------------------------
 -- Building the saturated syntax
@@ -1791,159 +1806,290 @@ of the very function whose termination properties we are exploiting.
 It is also similar to Note [Do not strictify a DFun's parameter dictionaries],
 where marking recursive DFuns (of undecidable *instances*) strict in dictionary
 *parameters* leads to quite the same change in termination as above.
+
+Note [BindInfo and FloatInfo]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The `BindInfo` of a `Float` describes whether it is a (let-bound) value
+(`BoundVal`), or otherwise whether it will be `CaseBound` or `LetBound`.
+We want to case-bind iff the binding is either ok-for-spec-eval, unlifted,
+strictly used (and perhaps lifted), or a literal string (Wrinkle (FI1) below).
+
+The `FloatInfo` of a `Float` describes how far it will float.
+
+  * Any binding is at least `StrictContextFloatable`, meaning we may float it
+    out of a strict context such as `f <>` where `f` is strict.
+
+  * A binding is `LazyContextFloatable` if we may float it out of a lazy context
+    such as `let x = <> in Just x`.
+    Counterexample: A strict or unlifted binding that isn't ok-for-spec-eval
+                    such as `case divInt# x y of r -> ...`.
+
+  * A binding is `TopLvlFloatable` if it is `LazyContextFloatable` and also can
+    be bound at the top level.
+    Counterexample: A strict or unlifted binding (ok-for-spec-eval or not)
+                    such as `case x +# y of r -> ...`.
+
+All lazy (and hence lifted) bindings are `TopLvlFloatable`.
+See also Note [Floats and FloatDecision] for how we maintain whole groups of
+floats and how far they go.
+
+Wrinkles:
+ (FI1)
+    String literals are a somewhat weird outlier; they qualify as
+    'TopLvlFloatable' and will be floated quite aggressively, but the code
+    generator expects unboxed values to be case-bound (in contrast to boxed
+    values). This requires a special case in 'mkFloat'.
+    See also Wrinkle (FS1) of Note [ANF-ising literal string arguments].
+
+Note [Floats and FloatDecision]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+We have a special datatype `Floats` for modelling a telescope of `FloatingBind`.
+It has one `OrdList` per class of `FloatInfo` with the following meaning:
+
+  * Any binding in `top_floats` is at least `TopLvlFloatable`;
+    any binding in `lzy_floats` is at least `LazyContextFloatable`;
+    any binding in `str_floats` is at least `StrictContextFloatable`.
+
+  * `str_floats` is nested inside `lzy_floats`, is nested inside `top_floats`.
+    No binding in a "higher" `FloatInfo` class may scope over bindings in
+    a "lower" class; for example, no binding in `top_floats` may scope over a
+    binding in `str_floats`.
+
+(It is always safe to put the whole telescope in `str_floats`.)
+There are several operations for creating and combining `Floats` that maintain
+these properties.
+
+When deciding whether we want to float out a `Floats` out of a binding context
+such as `let x = <> in e` (let), `f <>` (app), or `x = <>; ...` (top-level),
+we consult the `FloatInfo` of the `Floats` (e.g., the highest class of non-empty
+`OrdList`):
+
+  * If we want to float to the top-level (`x = <>; ...`), we may take all
+    bindings that are `TopLvlFloatable` and leave the rest inside the binding.
+    This is encoded in a `FloatDecision` of `FloatSome TopLvlFloatable`.
+  * If we want to float locally (let or app), then the floating decision is
+    `FloatAll` or `FloatNone`; see Note [wantFloatLocal].
+
+`executeFloatDecision` is then used to act on the particular `FloatDecision`.
 -}
 
+-- See Note [BindInfo and FloatInfo]
+data BindInfo
+  = CaseBound -- ^ A strict binding
+  | LetBound  -- ^ A lazy or value binding
+  | BoundVal  -- ^ A value binding (E.g., a 'LetBound' that is an HNF)
+  deriving Eq
+
+-- See Note [BindInfo and FloatInfo]
+data FloatInfo
+  = TopLvlFloatable
+  -- ^ Anything that can be bound at top-level, such as arbitrary lifted
+  -- bindings or anything that responds True to `exprIsHNF`, such as literals or
+  -- saturated DataCon apps where unlifted or strict args are values.
+
+  | LazyContextFloatable
+  -- ^ Anything that can be floated out of a lazy context.
+  -- In addition to any 'TopLvlFloatable' things, this includes (unlifted)
+  -- bindings that are ok-for-spec that we intend to case-bind.
+
+  | StrictContextFloatable
+  -- ^ Anything that can be floated out of a strict evaluation context.
+  -- That is possible for all bindings; this is the Top element of 'FloatInfo'.
+
+  deriving (Eq, Ord)
+
+instance Outputable BindInfo where
+  ppr CaseBound = text "Case"
+  ppr LetBound  = text "Let"
+  ppr BoundVal  = text "Letv"
+
+instance Outputable FloatInfo where
+  ppr TopLvlFloatable = text "top-lvl"
+  ppr LazyContextFloatable = text "lzy-ctx"
+  ppr StrictContextFloatable = text "str-ctx"
+
+-- See Note [Floating in CorePrep]
+-- and Note [BindInfo and FloatInfo]
 data FloatingBind
-  -- | Rhs of bindings are CpeRhss
-  -- They are always of lifted type;
-  -- unlifted ones are done with FloatCase
-  = FloatLet CoreBind
-
-  -- | Float a literal string binding.
-  -- INVARIANT: The `CoreExpr` matches `Lit (LitString bs)`.
-  --            It's just more convenient to keep around the expr rather than
-  --            the wrapped `bs` and reallocate the expr.
-  -- This is a special case of `FloatCase` that is unconditionally ok-for-spec.
-  -- We want to float out strings quite aggressively out of RHSs if doing so
-  -- saves allocation of a thunk ('wantFloatNested'); see Wrinkle (FS1)
-  -- in Note [ANF-ising literal string arguments].
-  | FloatString !CoreExpr !Id
-
-  | FloatCase
-       CpeBody         -- ^ Scrutinee
-       Id              -- ^ Case binder
-       AltCon [Var]    -- ^ Single alternative
-       Bool            -- ^ Ok-for-speculation; False of a strict,
-                       --   but lifted binding that is not OK for
-                       --   Note [Speculative evaluation].
-
-  -- | See Note [Floating Ticks in CorePrep]
+  = Float !CoreBind !BindInfo !FloatInfo
+  | UnsafeEqualityCase !CoreExpr !CoreBndr !AltCon ![CoreBndr]
   | FloatTick CoreTickish
 
-data Floats = Floats OkToSpec (OrdList FloatingBind)
+-- See Note [Floats and FloatDecision]
+data Floats
+  = Floats
+  { top_floats :: !(OrdList FloatingBind)
+  , lzy_floats :: !(OrdList FloatingBind)
+  , str_floats :: !(OrdList FloatingBind)
+  }
 
 instance Outputable FloatingBind where
-  ppr (FloatLet b) = ppr b
-  ppr (FloatString e b) = text "string" <> braces (ppr b <> char '=' <> ppr e)
-  ppr (FloatCase r b k bs ok) = text "case" <> braces (ppr ok) <+> ppr r
+  ppr (Float b bi fi) = ppr bi <+> ppr fi <+> ppr b
+  ppr (FloatTick t) = ppr t
+  ppr (UnsafeEqualityCase scrut b k bs) = text "case" <+> ppr scrut
                                 <+> text "of"<+> ppr b <> text "@"
                                 <> case bs of
                                    [] -> ppr k
                                    _  -> parens (ppr k <+> ppr bs)
-  ppr (FloatTick t) = ppr t
 
 instance Outputable Floats where
-  ppr (Floats flag fs) = text "Floats" <> brackets (ppr flag) <+>
-                         braces (vcat (map ppr (fromOL fs)))
-
-instance Outputable OkToSpec where
-  ppr OkToSpec    = text "OkToSpec"
-  ppr IfUnliftedOk = text "IfUnliftedOk"
-  ppr NotOkToSpec = text "NotOkToSpec"
-
--- Can we float these binds out of the rhs of a let?  We cache this decision
--- to avoid having to recompute it in a non-linear way when there are
--- deeply nested lets.
-data OkToSpec
-   = OkToSpec           -- ^ Lazy bindings of lifted type. Float as you please
-   | IfUnliftedOk       -- ^ A mixture of lazy lifted bindings and n
-                        -- ok-to-speculate unlifted bindings.
-                        -- Float out of lets, but not to top-level!
-   | NotOkToSpec        -- ^ Some not-ok-to-speculate unlifted bindings
+  ppr (Floats top lzy str) = text "Floats" <> braces (vcat (map ppr [top, lzy, str]))
 
 mkFloat :: CorePrepEnv -> Demand -> Bool -> Id -> CpeRhs -> FloatingBind
-mkFloat env dmd is_unlifted bndr rhs
-  | Lit LitString{} <- rhs = FloatString rhs bndr
-
-  | is_strict || ok_for_spec
-  , not is_hnf             = FloatCase rhs bndr DEFAULT [] ok_for_spec
-      -- See Note [Speculative evaluation]
-      -- Don't make a case for a HNF binding, even if it's strict
-      -- Otherwise we get  case (\x -> e) of ...!
-
-  | is_unlifted            = FloatCase rhs bndr DEFAULT [] True
-      -- we used to assertPpr ok_for_spec (ppr rhs) here, but it is now disabled
-      -- because exprOkForSpeculation isn't stable under ANF-ing. See for
-      -- example #19489 where the following unlifted expression:
-      --
-      --    GHC.Prim.(#|_#) @LiftedRep @LiftedRep @[a_ax0] @[a_ax0]
-      --                    (GHC.Types.: @a_ax0 a2_agq a3_agl)
-      --
-      -- is ok-for-spec but is ANF-ised into:
-      --
-      --    let sat = GHC.Types.: @a_ax0 a2_agq a3_agl
-      --    in GHC.Prim.(#|_#) @LiftedRep @LiftedRep @[a_ax0] @[a_ax0] sat
-      --
-      -- which isn't ok-for-spec because of the let-expression.
-
-  | is_hnf                 = FloatLet (NonRec bndr                       rhs)
-  | otherwise              = FloatLet (NonRec (setIdDemandInfo bndr dmd) rhs)
-                   -- See Note [Pin demand info on floats]
+mkFloat env dmd is_unlifted bndr rhs = -- pprTraceWith "mkFloat" ppr $
+  Float (NonRec bndr' rhs) bound info
   where
+    bndr' = setIdDemandInfo bndr dmd -- See Note [Pin demand info on floats]
+    (bound,info)
+      | is_lifted, is_hnf        = (BoundVal, TopLvlFloatable)
+          -- is_lifted: We currently don't allow unlifted values at the
+          --            top-level or inside letrecs
+          --            (but SG thinks that in principle, we should)
+      | exprIsTickedString rhs   = (CaseBound, TopLvlFloatable)
+          -- See Note [BindInfo and FloatInfo], Wrinkle (FI1)
+          -- for why it's not BoundVal
+      | is_lifted,   ok_for_spec = (CaseBound, TopLvlFloatable)
+      | is_unlifted, ok_for_spec = (CaseBound, LazyContextFloatable)
+          -- See Note [Speculative evaluation]
+          -- Ok-for-spec-eval things will be case-bound, lifted or not.
+          -- But when it's lifted we are ok with floating it to top-level
+          -- (where it is actually bound lazily).
+      | is_unlifted || is_strict = (CaseBound, StrictContextFloatable)
+          -- These will never be floated out of a lazy RHS context
+      | otherwise                = assertPpr is_lifted (ppr rhs) $
+                                   (LetBound, TopLvlFloatable)
+          -- And these float freely but can't be speculated, hence LetBound
+
+    is_lifted   = not is_unlifted
     is_hnf      = exprIsHNF rhs
     is_strict   = isStrUsedDmd dmd
     ok_for_spec = exprOkForSpecEval (not . is_rec_call) rhs
     is_rec_call = (`elemUnVarSet` cpe_rec_ids env)
 
 emptyFloats :: Floats
-emptyFloats = Floats OkToSpec nilOL
+emptyFloats = Floats nilOL nilOL nilOL
 
 isEmptyFloats :: Floats -> Bool
-isEmptyFloats (Floats _ bs) = isNilOL bs
+isEmptyFloats (Floats b1 b2 b3) = isNilOL b1 && isNilOL b2 && isNilOL b3
 
-wrapBinds :: Floats -> CpeBody -> CpeBody
-wrapBinds (Floats _ binds) body
-  = foldrOL mk_bind body binds
-  where
-    mk_bind (FloatCase rhs bndr con bs _) body = Case rhs bndr (exprType body) [Alt con bs body]
-    mk_bind (FloatString rhs bndr)        body = Case rhs bndr (exprType body) [Alt DEFAULT [] body]
-    mk_bind (FloatLet bind)               body = Let bind body
-    mk_bind (FloatTick tickish)           body = mkTick tickish body
-
-addFloat :: Floats -> FloatingBind -> Floats
-addFloat (Floats ok_to_spec floats) new_float
-  = Floats (combine ok_to_spec (check new_float)) (floats `snocOL` new_float)
-  where
-    check FloatLet {}   = OkToSpec
-    check FloatTick{}   = OkToSpec
-    check FloatString{} = OkToSpec
-    check (FloatCase _ _ _ _ ok_for_spec)
-      | ok_for_spec     = IfUnliftedOk
-      | otherwise       = NotOkToSpec
-        -- The ok-for-speculation flag says that it's safe to
-        -- float this Case out of a let, and thereby do it more eagerly
-        -- We need the IfUnliftedOk flag because it's never ok to float
-        -- an unlifted binding to the top level.
-        -- There is one exception: String literals! But those will become
-        -- FloatString and thus OkToSpec.
-        -- See Note [ANF-ising literal string arguments]
+getFloats :: Floats -> OrdList FloatingBind
+getFloats (Floats top lzy str) = top `appOL` lzy `appOL` str
 
 unitFloat :: FloatingBind -> Floats
-unitFloat = addFloat emptyFloats
+unitFloat = snocFloat emptyFloats
 
-appendFloats :: Floats -> Floats -> Floats
-appendFloats (Floats spec1 floats1) (Floats spec2 floats2)
-  = Floats (combine spec1 spec2) (floats1 `appOL` floats2)
+wrapBinds :: Floats -> CpeBody -> CpeBody
+wrapBinds floats body
+  = -- pprTraceWith "wrapBinds" (\res -> ppr floats $$ ppr body $$ ppr res) $
+    foldrOL mk_bind body (getFloats floats)
+  where
+    mk_bind f@(Float bind CaseBound _) body
+      | NonRec bndr rhs <- bind
+      = mkDefaultCase rhs bndr body
+      | otherwise
+      = pprPanic "wrapBinds" (ppr f)
+    mk_bind (Float bind _ _) body
+      = Let bind body
+    mk_bind (UnsafeEqualityCase scrut b con bs) body
+      = mkSingleAltCase scrut b con bs body
+    mk_bind (FloatTick tickish) body
+      = mkTick tickish body
 
-concatFloats :: [Floats] -> OrdList FloatingBind
-concatFloats = foldr (\ (Floats _ bs1) bs2 -> appOL bs1 bs2) nilOL
+-- | Computes the \"worst\" 'FloatInfo' for a 'Floats', e.g., the 'FloatInfo'
+-- of the innermost 'OrdList' which is non-empty.
+floatsInfo :: Floats -> FloatInfo
+floatsInfo floats
+  | not (isNilOL (str_floats floats))  = StrictContextFloatable
+  | not (isNilOL (lzy_floats floats))  = LazyContextFloatable
+  | otherwise                          = TopLvlFloatable
 
-combine :: OkToSpec -> OkToSpec -> OkToSpec
-combine NotOkToSpec _  = NotOkToSpec
-combine _ NotOkToSpec  = NotOkToSpec
-combine IfUnliftedOk _ = IfUnliftedOk
-combine _ IfUnliftedOk = IfUnliftedOk
-combine _ _            = OkToSpec
+-- | Append a 'FloatingBind' `b` to a 'Floats' telescope `bs` that may reference any
+-- binding of the 'Floats'.
+-- This function picks the appropriate 'OrdList' in `bs` that `b` is appended to,
+-- respecting its 'FloatInfo' and scoping.
+snocFloat :: Floats -> FloatingBind -> Floats
+snocFloat floats fb@(Float bind bound info)
+  | CaseBound <- bound
+  , TopLvlFloatable <- info
+  , NonRec _ rhs <- bind
+  , exprIsTickedString rhs
+  -- Always insert Literal (strings) at the front.
+  -- They won't scope over any existing binding in `floats`.
+  = floats { top_floats = fb `consOL` top_floats floats }
+  | otherwise
+  = snoc_at floats fb (max (floatsInfo floats) info)
+      -- max: Respect scoping, hence `floatsInfo`, and respect info of `fb`
+snocFloat floats fb@UnsafeEqualityCase{} -- treat it like an ok-for-spec Float
+  = snoc_at floats fb (max (floatsInfo floats) LazyContextFloatable)
+snocFloat floats fb@FloatTick{}
+  = snoc_at floats fb (floatsInfo floats) -- Ticks are simply snoced
+
+snoc_at :: Floats -> FloatingBind -> FloatInfo -> Floats
+snoc_at floats fb info = case info of
+  TopLvlFloatable        -> floats { top_floats   = top_floats floats `snocOL` fb }
+  LazyContextFloatable   -> floats { lzy_floats   = lzy_floats floats `snocOL` fb }
+  StrictContextFloatable -> floats { str_floats = str_floats floats `snocOL` fb }
+
+-- | Put all floats with 'FloatInfo' less than or equal to the given one in the
+-- left partition, the rest in the right. Morally,
+--
+-- > partitionFloats info fs = partition (<= info) fs
+--
+partitionFloats :: FloatInfo -> Floats -> (Floats, Floats)
+partitionFloats info (Floats top lzy str) = case info of
+  TopLvlFloatable        -> (Floats top nilOL nilOL, Floats nilOL lzy   str)
+  LazyContextFloatable   -> (Floats top lzy   nilOL, Floats nilOL nilOL str)
+  StrictContextFloatable -> (Floats top lzy   str,   Floats nilOL nilOL nilOL)
+
+push_down_floats :: FloatInfo -> Floats -> Floats
+push_down_floats info fs@(Floats top lzy str) = case info of
+  TopLvlFloatable        -> fs
+  LazyContextFloatable   -> Floats nilOL (top `appOL` lzy) str
+  StrictContextFloatable -> Floats nilOL nilOL             (getFloats fs)
+
+-- | Cons a 'FloatingBind' `b` to a 'Floats' telescope `bs` which scopes over
+-- `b`. This function appropriately pushes around bindings in the 'OrdList's of
+-- `bs` so that `b` is the very first binding in the resulting telescope.
+consFloat :: FloatingBind -> Floats -> Floats
+consFloat fb@FloatTick{} floats =
+  floats { top_floats = fb `consOL` top_floats floats }
+consFloat fb@(Float _ _ info) floats = case info of
+  TopLvlFloatable        -> floats' { top_floats = fb `consOL` top_floats floats' }
+  LazyContextFloatable   -> floats' { lzy_floats = fb `consOL` lzy_floats floats' }
+  StrictContextFloatable -> floats' { str_floats = fb `consOL` str_floats floats' }
+  where
+    floats' = push_down_floats info floats
+consFloat fb@UnsafeEqualityCase{} floats = -- like the LazyContextFloatable Float case
+  floats' { lzy_floats = fb `consOL` lzy_floats      floats' }
+  where
+    floats' = push_down_floats LazyContextFloatable floats
+
+-- | Append two telescopes, nesting the right inside the left.
+appFloats :: Floats -> Floats -> Floats
+appFloats outer inner =
+  -- After having pushed down floats in inner, we can simply zip with up.
+  zipFloats outer (push_down_floats (floatsInfo outer) inner)
+
+-- | Zip up two telescopes which don't scope over each other.
+zipFloats :: Floats -> Floats -> Floats
+zipFloats floats1 floats2
+  = Floats
+  { top_floats = top_floats floats1 `appOL` top_floats floats2
+  , lzy_floats = lzy_floats floats1 `appOL` lzy_floats floats2
+  , str_floats = str_floats floats1 `appOL` str_floats floats2
+  }
+
+zipManyFloats :: [Floats] -> Floats
+zipManyFloats = foldr zipFloats emptyFloats
 
 deFloatTop :: Floats -> [CoreBind]
--- For top level only; we don't expect any FloatCases
-deFloatTop (Floats _ floats)
-  = foldrOL get [] floats
+-- For top level only; we don't expect any Strict or LazyContextFloatable 'FloatInfo'
+deFloatTop floats
+  = foldrOL get [] (getFloats floats)
   where
-    get (FloatLet b)               bs = get_bind b                 : bs
-    get (FloatString body var)     bs = get_bind (NonRec var body) : bs
-    get (FloatCase body var _ _ _) bs = get_bind (NonRec var body) : bs
-    get b _ = pprPanic "corePrepPgm" (ppr b)
+    get (Float b _ TopLvlFloatable) bs
+      = get_bind b : bs
+    get b _  = pprPanic "corePrepPgm" (ppr b)
 
     -- See Note [Dead code in CorePrep]
     get_bind (NonRec x e) = NonRec x (occurAnalyseExpr e)
@@ -1951,25 +2097,80 @@ deFloatTop (Floats _ floats)
 
 ---------------------------------------------------------------------------
 
-wantFloatNested :: RecFlag -> Demand -> Bool -> Floats -> CpeRhs -> Bool
-wantFloatNested is_rec dmd rhs_is_unlifted floats rhs
-  =  isEmptyFloats floats
-  || isStrUsedDmd dmd
-  || rhs_is_unlifted
-  || (allLazyNested is_rec floats && exprIsHNF rhs)
-        -- Why the test for allLazyNested?
-        --      v = f (x `divInt#` y)
-        -- we don't want to float the case, even if f has arity 2,
-        -- because floating the case would make it evaluated too early
+{- Note [wantFloatLocal]
+~~~~~~~~~~~~~~~~~~~~~~~~
+Consider
+  let x = let y = e1 in e2
+  in e
+Do we want to float out `y` out of `x`?
+(Similarly for `(\x. e) (let y = e1 in e2)`.)
+`wantFloatLocal` is concerned with answering this question.
+It considers the Demand on `x`, whether or not `e2` is unlifted and the
+`FloatInfo` of the `y` binding (e.g., it might itself be unlifted, a value,
+strict, or ok-for-spec)
 
-allLazyTop :: Floats -> Bool
-allLazyTop (Floats OkToSpec _) = True
-allLazyTop _                   = False
+We float out if ...
+  1. ... the binding context is strict anyway, so either `x` is used strictly
+     or has unlifted type.
+     Doing so is trivially sound and won`t increase allocations, so we
+     return `FloatAll`.
+  2. ... `e2` becomes a value in doing so, in which case we won`t need to
+     allocate a thunk for `x`/the arg that closes over the FVs of `e1`.
+     In general, this is only sound if `y=e1` is `LazyContextFloatable`.
+     (See Note [BindInfo and FloatInfo].)
+     Nothing is won if `x` doesn't become a value, so we return `FloatNone`
+     if there are any float is `StrictContextFloatable`, and return `FloatAll`
+     otherwise.
 
-allLazyNested :: RecFlag -> Floats -> Bool
-allLazyNested _      (Floats OkToSpec    _)  = True
-allLazyNested _      (Floats NotOkToSpec _)  = False
-allLazyNested is_rec (Floats IfUnliftedOk _) = isNonRec is_rec
+To elaborate on (2), consider the case when the floated binding is
+`e1 = divInt# a b`, e.g., not `LazyContextFloatable`:
+  let x = f (a `divInt#` b)
+  in e
+this ANFises to
+  let x = case a `divInt#` b of r { __DEFAULT -> f r }
+  in e
+If `x` is used lazily, we may not float `r` further out.
+A float binding `x +# y` is OK, though, and in so every ok-for-spec-eval
+binding is `LazyContextFloatable`.
+
+Wrinkles:
+
+ (W1) When the outer binding is a letrec, i.e.,
+        letrec x = case a +# b of r { __DEFAULT -> f y r }
+               y = [x]
+        in e
+      we don't want to float `LazyContextFloatable` bindings such as `r` either
+      and require `TopLvlFloatable` instead.
+      The reason is that we don't track FV of FloatBindings, so we would need
+      to park them in the letrec,
+        letrec r = a +# b -- NB: r`s RHS might scope over x and y
+               x = f y r
+               y = [x]
+        in e
+      and now we have violated Note [Core letrec invariant].
+      So we preempt this case in `wantFloatLocal`, responding `FloatNone` unless
+      all floats are `TopLvlFloatable`.
+-}
+
+
+
+wantFloatLocal :: RecFlag -> Demand -> Bool -> Floats -> CpeRhs -> FloatDecision
+-- See Note [wantFloatLocal]
+wantFloatLocal is_rec rhs_dmd rhs_is_unlifted floats rhs
+  |  isEmptyFloats floats -- Well yeah...
+  || isStrUsedDmd rhs_dmd -- Case (1) of Note [wantFloatLocal]
+  || rhs_is_unlifted      -- dito
+  || (floatsInfo floats <= max_float_info && exprIsHNF rhs)
+                          -- Case (2) of Note [wantFloatLocal]
+  = FloatAll
+
+  | otherwise
+  = FloatNone
+  where
+    max_float_info | isRec is_rec = TopLvlFloatable
+                   | otherwise    = LazyContextFloatable
+                    -- See Note [wantFloatLocal], Wrinkle (W1)
+                    -- for 'is_rec'
 
 {-
 ************************************************************************
@@ -2224,26 +2425,33 @@ newVar ty
 
 -- | Like wrapFloats, but only wraps tick floats
 wrapTicks :: Floats -> CoreExpr -> (Floats, CoreExpr)
-wrapTicks (Floats flag floats0) expr =
-    (Floats flag (toOL $ reverse floats1), foldr mkTick expr (reverse ticks1))
-  where (floats1, ticks1) = foldlOL go ([], []) $ floats0
+wrapTicks floats expr
+  | (floats1, ticks1) <- fold_fun go floats
+  = (floats1, foldrOL mkTick expr ticks1)
+  where fold_fun f floats =
+           let (top, ticks1) = foldlOL f (nilOL,nilOL) (top_floats floats)
+               (lzy, ticks2) = foldlOL f (nilOL,ticks1) (lzy_floats floats)
+               (str, ticks3) = foldlOL f (nilOL,ticks2) (str_floats floats)
+           in (Floats top lzy str, ticks3)
         -- Deeply nested constructors will produce long lists of
         -- redundant source note floats here. We need to eliminate
         -- those early, as relying on mkTick to spot it after the fact
         -- can yield O(n^3) complexity [#11095]
-        go (floats, ticks) (FloatTick t)
+        go (flt_binds, ticks) (FloatTick t)
           = assert (tickishPlace t == PlaceNonLam)
-            (floats, if any (flip tickishContains t) ticks
-                     then ticks else t:ticks)
-        go (floats, ticks) f@FloatString{}
-          = (f:floats, ticks) -- don't need to wrap the tick around the string; nothing to execute.
-        go (floats, ticks) f
-          = (foldr wrap f (reverse ticks):floats, ticks)
+            (flt_binds, if any (flip tickishContains t) ticks
+                        then ticks else ticks `snocOL` t)
+        go (flt_binds, ticks) f@UnsafeEqualityCase{}
+          -- unsafe equality case will be erased; don't wrap anything!
+          = (flt_binds `snocOL` f, ticks)
+        go (flt_binds, ticks) f@(Float _ BoundVal _)
+          -- don't need to wrap the tick around a value; nothing to execute.
+          = (flt_binds `snocOL` f, ticks)
+        go (flt_binds, ticks) f@Float{}
+          = (flt_binds `snocOL` foldrOL wrap f ticks, ticks)
 
-        wrap t (FloatLet bind)           = FloatLet (wrapBind t bind)
-        wrap t (FloatCase r b con bs ok) = FloatCase (mkTick t r) b con bs ok
-        wrap _ other                     = pprPanic "wrapTicks: unexpected float!"
-                                             (ppr other)
+        wrap t (Float bind bound info) = Float (wrapBind t bind) bound info
+        wrap _ f                 = pprPanic "Unexpected FloatingBind" (ppr f)
         wrapBind t (NonRec binder rhs) = NonRec binder (mkTick t rhs)
         wrapBind t (Rec pairs)         = Rec (mapSnd (mkTick t) pairs)
 
