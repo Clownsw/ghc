@@ -17,6 +17,13 @@
 module Data.Enum
     ( Bounded(..)
     , Enum(..)
+    , enumerate
     ) where
 
 import GHC.Enum
+
+-- | A list of all elements between 'minBound' and 'maxBound', inclusively.
+--
+-- @since 4.19.0.0
+enumerate :: (Enum a, Bounded a) => [a]
+enumerate = [minBound .. maxBound]
