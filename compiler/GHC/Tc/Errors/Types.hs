@@ -2379,6 +2379,12 @@ data TcRnMessage where
       an illegal type or kind, probably required -XDataKinds
       and is used without the enabled extension.
 
+      This error can occur in both the renamer and the typechecker. The field
+      of type @'Either' ('HsType' 'GhcPs') 'Type'@ reflects this: this field
+      will contain a 'Left' value if the error occurred in the renamer, and this
+      field will contain a 'Right' value if the error occurred in the
+      typechecker.
+
       Examples:
 
         type Foo = [Nat, Char]
@@ -2386,11 +2392,22 @@ data TcRnMessage where
         type Bar = [Int, String]
 
       Test cases: linear/should_fail/T18888
+                  parser/should_fail/readFail001
                   polykinds/T7151
+                  polykinds/T7433
+                  rename/should_fail/T13568
+                  rename/should_fail/T22478e
                   th/TH_Promoted1Tuple
                   typecheck/should_fail/tcfail094
+                  typecheck/should_fail/T22141fa.hs
+                  typecheck/should_fail/T22141fb.hs
+                  typecheck/should_fail/T22141fc.hs
+                  typecheck/should_fail/T22141fd.hs
+                  typecheck/should_fail/T22141fe.hs
+                  typecheck/should_compile/T22141f.hs
+                  typecheck/should_compile/T22141g.hs
   -}
-  TcRnDataKindsError :: TypeOrKind -> HsType GhcPs -> TcRnMessage
+  TcRnDataKindsError :: TypeOrKind -> Either (HsType GhcPs) Type -> TcRnMessage
 
   {-| TcRnCannotBindScopedTyVarInPatSig is an error stating that scoped type
      variables cannot be used in pattern bindings.

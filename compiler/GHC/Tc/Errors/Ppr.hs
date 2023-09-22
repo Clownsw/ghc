@@ -1025,7 +1025,6 @@ instance Diagnostic TcRnMessage where
                                        <+> quotes (pprTheta theta)
 
                      FamDataConPE   -> text "it comes from a data family instance"
-                     NoDataKindsDC  -> text "perhaps you intended to use DataKinds"
                      PatSynPE       -> text "pattern synonyms cannot be promoted"
                      RecDataConPE   -> same_rec_group_msg
                      ClassPE        -> same_rec_group_msg
@@ -1656,7 +1655,12 @@ instance Diagnostic TcRnMessage where
 
     TcRnDataKindsError typeOrKind thing
       -> mkSimpleDecorated $
-           text "Illegal" <+> (text $ levelString typeOrKind) <> colon <+> quotes (ppr thing)
+           text "Illegal" <+> (text $ levelString typeOrKind) <> colon <+> quotes ppr_thing
+      where
+        ppr_thing =
+          case thing of
+            Left renamer_ast     -> ppr renamer_ast
+            Right typechecker_ty -> ppr typechecker_ty
 
     TcRnTypeSynonymCycle decl_or_tcs
       -> mkSimpleDecorated $

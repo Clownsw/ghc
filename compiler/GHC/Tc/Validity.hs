@@ -58,7 +58,8 @@ import GHC.Driver.Session
 import qualified GHC.LanguageExtensions as LangExt
 
 import GHC.Types.Error
-import GHC.Types.Basic   ( UnboxedTupleOrSum(..), unboxedTupleOrSumExtension )
+import GHC.Types.Basic   ( TypeOrKind(..), UnboxedTupleOrSum(..)
+                         , unboxedTupleOrSumExtension )
 import GHC.Types.Name
 import GHC.Types.Var.Env
 import GHC.Types.Var.Set
@@ -775,9 +776,17 @@ check_type ve ty@(TyConApp tc tys)
   = check_ubx_tuple_or_sum UnboxedSumType   ve ty tys
 
   | otherwise
-  = mapM_ (check_arg_type False ve) tys
+  = do { -- We require DataKinds to use a type constructor in a kind, unless it
+         -- is exempted (e.g., Type, TYPE, etc., which is checked by
+         -- isKindTyCon) or a `type data` type constructor.
+         unless (isKindTyCon tc || isTypeDataTyCon tc) $
+         checkDataKinds ve ty
+       ; mapM_ (check_arg_type False ve) tys }
 
-check_type _ (LitTy {}) = return ()
+check_type ve ty@(LitTy {}) =
+  -- Type-level literals are forbidden from appearing in kinds unless DataKinds
+  -- is enabled.
+  checkDataKinds ve ty
 
 check_type ve (CastTy ty _) = check_type ve ty
 
@@ -925,6 +934,10 @@ check_ubx_tuple_or_sum tup_or_sum (ve@ValidityEnv{ve_tidy_env = env}) ty tys
         ; checkTcM ub_thing_allowed
             (env, TcRnUnboxedTupleOrSumTypeFuncArg tup_or_sum (tidyType env ty))
 
+          -- Unboxed tuples and sums are forbidden from appearing in kinds
+          -- unless DataKinds is enabled.
+        ; checkDataKinds ve ty
+
         ; impred <- xoptM LangExt.ImpredicativeTypes
         ; let rank' = if impred then ArbitraryRank else MonoTypeTyConArg
                 -- c.f. check_arg_type
@@ -1000,6 +1013,15 @@ checkVdqOK ve tvbs ty = do
     no_vdq = all (isInvisibleForAllTyFlag . binderFlag) tvbs
     ValidityEnv{ve_tidy_env = env, ve_ctxt = ctxt} = ve
 
+-- | Check for a DataKinds violation in a kind context.
+-- See @Note [Checking for DataKinds]@.
+checkDataKinds :: ValidityEnv -> Type -> TcM ()
+checkDataKinds (ValidityEnv{ ve_ctxt = ctxt, ve_tidy_env = env }) ty = do
+  data_kinds <- xoptM LangExt.DataKinds
+  checkTcM
+    (data_kinds || typeLevelUserTypeCtxt ctxt) $
+    (env, TcRnDataKindsError KindLevel (Right (tidyType env ty)))
+
 {- Note [No constraints in kinds]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 GHC does not allow constraints in kinds. Equality constraints
@@ -1072,6 +1094,84 @@ caught properly. But be careful! We can't make the rank-n case /last/ either,
 as the FunTy case must came after the rank-n case. Otherwise, something like
 (Eq a => Int) would be treated as a function type (FunTy), which just
 wouldn't do.
+
+Note [Checking for DataKinds]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Checking for DataKinds is surprisingly involved. There are some forms of types
+that we always reject unless DataKinds is enabled:
+
+* Promoted data constructors (e.g., 'Just)
+* Promoted list or tuple syntax (e.g., '[Int, Bool] or '(Int, Bool))
+* Type-level literals (e.g., 42, "hello", or 'a' at the type level)
+
+There are also some things that are permissible in type contexts without
+DataKinds that are *not* permissible in kinds contexts without DataKinds:
+
+* In a type context, it is perfectly acceptable to mention types like
+  Maybe, [], Char, Nat, Symbol, etc. This is not permissible at the kind
+  level without enabling DataKinds. The only type constructors that can be
+  mentioned in a kind without DataKinds are:
+
+  - Exemptions like Type, TYPE, etc.
+  - Kind constructors declared with `type data`
+    (see Note [Type data declarations] in GHC.Rename.Module).
+
+* In a type context, GHC does not look beneath type synonyms to check for
+  DataKinds. This means that it is possible to write code that looks like this:
+
+     {-# LANGUAGE DataKinds #-}
+     module A where
+
+       type MyTrue = 'True
+
+     {-# LANGUAGE NoDataKinds #-}
+     module B where
+
+       import A
+       import Data.Proxy
+
+       f :: Proxy MyTrue
+       f = Proxy
+
+  Note that `f :: Proxy MyTrue` is accepted without DataKinds, even though
+  MyTrue expands to 'True (which *would* require DataKinds if the user wrote
+  it directly).
+
+  In a kind context, GHC *does* look beneath type synonyms to check for
+  DataKinds violations. That is, the following code would *not* be accepted:
+
+     module C where
+
+       type MySymbol = Symbol
+
+     {-# LANGUAGE NoDataKinds #-}
+     module D where
+
+       import C
+
+       data Dat :: MySymbol -> Type
+       data Dat a
+
+  Here, Dat's kind mentions MySymbol. This expands to Symbol, which is forbidden
+  from appearing in a kind context without enabling DataKinds.
+
+Because checking for DataKinds in a kind context requires looking beneath type
+synonyms, it is natural to implement these checks in checkValidType, which has
+the necessary machinery to check for language extensions in the presence of
+type synonyms. For the exact same reason, checkValidType is *not* a good place
+to check for DataKinds in a type context, since we deliberately do not want to
+look beneath type synonyms there. As a result, we check for DataKinds in two
+different places in the code:
+
+* We check for DataKinds violations in kind contexts in the typechecker. See
+  checkDataKinds in this module.
+* We check for DataKinds violations in type contexts in the renamer. See
+  checkDataKinds in GHC.Rename.HsType and check_data_kinds in GHC.Rename.Pat.
+
+  Note that the renamer can also catch "obvious" kind-level violations such as
+  `data Dat :: Proxy 42 -> Type` (where 42 is not hidden beneath a type
+  synonym), so we also catch a subset of kind-level violations in the renamer
+  to allow for earlier reporting of these errors.
 
 ************************************************************************
 *                                                                      *
