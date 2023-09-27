@@ -121,6 +121,7 @@ Library
         Data.Bitraversable
         Data.Bits
         Data.Bool
+        Data.Bounded
         Data.Char
         Data.Coerce
         Data.Complex
