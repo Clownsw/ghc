@@ -268,6 +268,9 @@ instance Outputable GhcHint where
       -> text "Bind" <+> quotes (ppr tv) <+> text "on the LHS of the type declaration"
     SuggestAnonymousWildcard
       -> text "Use an anonymous wildcard" <+> quotes (text "_")
+    SuggestExplicitQuantification tv
+      -> hsep [ text "Use an explicit", quotes (text "forall")
+              , text "to quantify over", quotes (ppr tv) ]
 
 perhapsAsPat :: SDoc
 perhapsAsPat = text "Perhaps you meant an as-pattern, which must not be surrounded by whitespace"

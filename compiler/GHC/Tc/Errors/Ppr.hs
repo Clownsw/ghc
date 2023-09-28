@@ -281,6 +281,10 @@ instance Diagnostic TcRnMessage where
       -> mkSimpleDecorated $
            hang (text "Illegal named wildcard in a type argument:")
                 2 (quotes (ppr rdr))
+    TcRnIllegalImplicitTyVarInTypeArgument rdr
+      -> mkSimpleDecorated $
+            hang (text "Illegal implicitly quantified type variable in a type argument:")
+                2 (quotes (ppr rdr))
     TcRnDuplicateFieldName fld_part dups
       -> mkSimpleDecorated $
            hsep [ text "Duplicate field name"
@@ -1948,6 +1952,8 @@ instance Diagnostic TcRnMessage where
       -> ErrorWithoutFlag
     TcRnIllegalNamedWildcardInTypeArgument{}
       -> ErrorWithoutFlag
+    TcRnIllegalImplicitTyVarInTypeArgument{}
+      -> ErrorWithoutFlag
     TcRnDuplicateFieldName{}
       -> ErrorWithoutFlag
     TcRnIllegalViewPattern{}
@@ -2561,6 +2567,8 @@ instance Diagnostic TcRnMessage where
       -> noHints
     TcRnIllegalNamedWildcardInTypeArgument{}
       -> [SuggestAnonymousWildcard]
+    TcRnIllegalImplicitTyVarInTypeArgument tv
+      -> [SuggestExplicitQuantification tv]
     TcRnDuplicateFieldName{}
       -> noHints
     TcRnIllegalViewPattern{}

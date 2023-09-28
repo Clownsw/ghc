@@ -15,6 +15,7 @@ test('T23738_tyvar', normal, compile, [''])
 test('T23738_overlit', normal, compile, [''])
 test('T23738_nested', normal, compile, [''])
 test('T23738_wild', normal, compile, [''])
+test('T23738_sigforall', normal, compile, [''])
 
 test('T22326_th_dump1', req_th, compile, ['-v0 -ddump-splices -dsuppress-uniques'])
 test('T22326_th_pprint1', req_th, compile, [''])

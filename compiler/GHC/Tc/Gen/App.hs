@@ -858,13 +858,15 @@ expr_to_type earg = HsWC [] <$> go earg
          ; return (L l (HsExplicitListTy noExtField NotPromoted ts)) }
     go (L l (ExprWithTySig _ e sig_ty)) =
       do { t <- go e
-         ; sig_ki <- unwrap_sig <$> unwrap_wc sig_ty
+         ; sig_ki <- (unwrap_sig <=< unwrap_wc) sig_ty
          ; return (L l (HsKindSig noAnn t sig_ki)) }
       where
-        unwrap_sig :: LHsSigType GhcRn -> LHsType GhcRn
-        unwrap_sig (L _ (HsSig _ HsOuterImplicit{} body)) = body
+        unwrap_sig :: LHsSigType GhcRn -> TcM (LHsType GhcRn)
+        unwrap_sig (L _ (HsSig _ HsOuterImplicit{hso_ximplicit=bndrs} body))
+          | null bndrs = return body
+          | otherwise  = illegal_implicit_tvs bndrs
         unwrap_sig (L l (HsSig _ HsOuterExplicit{hso_bndrs=bndrs} body)) =
-          L l (HsForAllTy noExtField (HsForAllInvis noAnn bndrs) body)
+          return $ L l (HsForAllTy noExtField (HsForAllInvis noAnn bndrs) body)
     go (L l (HsPar _ _ e _)) =
       do { t <- go e
          ; return (L l (HsParTy noAnn t)) }
@@ -893,6 +895,11 @@ expr_to_type earg = HsWC [] <$> go earg
 
     illegal_wc :: RdrName -> TcM t
     illegal_wc rdr = failWith $ TcRnIllegalNamedWildcardInTypeArgument rdr
+
+    illegal_implicit_tvs :: [Name] -> TcM t
+    illegal_implicit_tvs tvs
+      = do { mapM_ (addErr . TcRnIllegalImplicitTyVarInTypeArgument . nameRdrName) tvs
+           ; failM }
 
 tc_inst_forall_arg :: ConcreteTyVars            -- See Note [Representation-polymorphism checking built-ins]
                    -> (ForAllTyBinder, TcType)  -- Function type

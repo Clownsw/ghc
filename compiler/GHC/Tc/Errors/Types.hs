@@ -729,6 +729,20 @@ data TcRnMessage where
     :: RdrName
     -> TcRnMessage
 
+  {- TcRnIllegalImplicitTyVarInTypeArgument is an error raised
+     when a type variable is implicitly quantified in a required type argument.
+
+     Example:
+       vfun :: forall (a :: k) -> ()
+       x = vfun (Nothing :: Maybe a)
+       --                        ^^^
+       -- implicit quantification not allowed in type arguments
+
+  -}
+  TcRnIllegalImplicitTyVarInTypeArgument
+    :: RdrName
+    -> TcRnMessage
+
   {-| TcRnDuplicateFieldName is an error that occurs whenever
       there are duplicate field names in a single record.
 
