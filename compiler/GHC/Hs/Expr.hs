@@ -147,7 +147,7 @@ mkSyntaxExpr = SyntaxExprRn
 -- | Make a 'SyntaxExpr' from a 'Name' (the "rn" is because this is used in the
 -- renamer).
 mkRnSyntaxExpr :: Name -> SyntaxExprRn
-mkRnSyntaxExpr name = SyntaxExprRn $ HsVar noExtField $ noLocA name
+mkRnSyntaxExpr name = SyntaxExprRn $ HsVar DistinctVarOcc $ noLocA name
 
 instance Outputable SyntaxExprRn where
   ppr (SyntaxExprRn expr) = ppr expr
@@ -208,8 +208,6 @@ data EpAnnUnboundVar = EpAnnUnboundVar
      , hsUnboundHole       :: EpaLocation
      } deriving Data
 
-type instance XVar           (GhcPass _) = NoExtField
-
 -- Record selectors at parse time are HsVar; they convert to HsRecSel
 -- on renaming.
 type instance XRecSel              GhcPs = DataConCantHappen
@@ -224,7 +222,14 @@ type instance XOverLabel     GhcTc = DataConCantHappen
 
 -- ---------------------------------------------------------------------
 
-type instance XVar           (GhcPass _) = NoExtField
+data IsPunnedVarOcc =
+    DistinctVarOcc
+  | PunnedVarOcc Name Name
+  deriving (Eq, Data)
+
+type instance XVar GhcPs = NoExtField
+type instance XVar GhcRn = IsPunnedVarOcc
+type instance XVar GhcTc = NoExtField
 
 type instance XUnboundVar    GhcPs = EpAnn EpAnnUnboundVar
 type instance XUnboundVar    GhcRn = NoExtField

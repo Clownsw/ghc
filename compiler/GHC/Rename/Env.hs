@@ -1255,19 +1255,21 @@ lookupSameOccRn_maybe =
 -- in scope at the type level, the lookup will succeed (so that the type-checker
 -- can report a more informative error later).  See Note [Promotion].
 --
-lookupExprOccRn :: RdrName -> RnM (Maybe GlobalRdrElt)
+lookupExprOccRn :: RdrName -> RnM (Maybe (IsPunnedVarOcc, GlobalRdrElt))
 lookupExprOccRn rdr_name
   = do { mb_name <- lookupOccRnX_maybe
                       lookupGlobalOccRn_overloaded
                       return
                       rdr_name
-       ; case mb_name of
-           Nothing   -> lookup_promoted rdr_name
-                        -- See Note [Promotion].
-                        -- We try looking up the name as a
-                        -- type constructor or type variable, if
-                        -- we failed to look up the name at the term level.
-           p         -> return p }
+       ; mb_promoted_name <- lookup_promoted rdr_name  -- See Note [Promotion]
+       ; return $ case (mb_name, mb_promoted_name) of
+           (Nothing, Nothing)      -> Nothing
+           (Just rdr_elt, Nothing) -> Just (DistinctVarOcc, rdr_elt)
+           (Nothing, Just rdr_elt) -> Just (DistinctVarOcc, rdr_elt)
+           (Just rdr_elt, Just rdr_elt') ->
+              let is_punned = PunnedVarOcc (gre_name rdr_elt) (gre_name rdr_elt')
+              in Just (is_punned, rdr_elt) }
+
 
 lookupGlobalOccRn_maybe :: WhichGREs GREInfo -> RdrName -> RnM (Maybe GlobalRdrElt)
 -- Looks up a RdrName occurrence in the top-level
@@ -2243,11 +2245,11 @@ lookupSyntaxNames :: [Name]                         -- Standard names
 lookupSyntaxNames std_names
   = do { rebindable_on <- xoptM LangExt.RebindableSyntax
        ; if not rebindable_on then
-             return (map (HsVar noExtField . noLocA) std_names, emptyFVs)
+             return (map (HsVar DistinctVarOcc . noLocA) std_names, emptyFVs)
         else
           do { usr_names <-
                  mapM (lookupOccRnNone . mkRdrUnqual . nameOccName) std_names
-             ; return (map (HsVar noExtField . noLocA) usr_names, mkFVs usr_names) } }
+             ; return (map (HsVar DistinctVarOcc . noLocA) usr_names, mkFVs usr_names) } }
 
 
 {-

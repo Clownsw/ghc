@@ -819,7 +819,11 @@ expr_to_type earg = HsWC [] <$> go earg
   where
     go :: LHsExpr GhcRn -> TcM (LHsType GhcRn)
     go (L _ (HsEmbTy _ _ t)) = unwrap_wc t
-    go (L l (HsVar _ lname)) = return (L l (HsTyVar noAnn NotPromoted lname))
+    go (L l (HsVar is_punned lname)) =
+      -- as per #281: variables and constructors (regardless of their namespace)
+      -- are mapped directly, without modification.
+      do { detect_puns is_punned (unLoc lname)
+         ; return (L l (HsTyVar noAnn NotPromoted lname)) }
     go (L l (HsApp _ lhs rhs)) =
       do { lhs' <- go lhs
          ; rhs' <- go rhs
@@ -887,6 +891,14 @@ expr_to_type earg = HsWC [] <$> go earg
             not_in_scope = failWith $ mkTcRnNotInScope rdr NotInScope
     go (L l (XExpr (HsExpanded orig _))) = go (L l orig)
     go e = failWith $ TcRnIllformedTypeArgument e
+
+    detect_puns :: IsPunnedVarOcc -> Name -> TcM ()
+    detect_puns (PunnedVarOcc n1 n2) name
+      -- as per #281: there should be no variable of the same name but from a different namespace,
+      -- or else raise an ambiguity error (does not apply to constructors)
+      | isVarNameSpace (rdrNameSpace (nameRdrName name))
+      = addErr $ TcRnIllegalPunnedVarOccInTypeArgument n1 n2
+    detect_puns _ _ = return ()
 
     unwrap_wc :: HsWildCardBndrs GhcRn t -> TcM t
     unwrap_wc (HsWC wcs t)
