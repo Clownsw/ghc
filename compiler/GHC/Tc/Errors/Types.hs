@@ -750,7 +750,7 @@ data TcRnMessage where
        vfun :: forall (a :: k) -> ()
        f (Just @a a) = vfun a
        --                  ^^^
-       --  
+       --  which `a` is referenced?
   -}
   TcRnIllegalPunnedVarOccInTypeArgument
     :: Name
