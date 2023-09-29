@@ -5,5 +5,7 @@ module T22141d where
 import Data.Kind (Type)
 import Data.Proxy (Proxy)
 
-type D :: Proxy (# Type | Type #) -> Type
+type T = (# Type | Type #)
+
+type D :: Proxy T -> Type
 data D a

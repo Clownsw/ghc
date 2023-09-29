@@ -2398,14 +2398,16 @@ data TcRnMessage where
                   rename/should_fail/T13568
                   rename/should_fail/T22478e
                   th/TH_Promoted1Tuple
-                  typecheck/should_fail/tcfail094
-                  typecheck/should_fail/T22141fa.hs
-                  typecheck/should_fail/T22141fb.hs
-                  typecheck/should_fail/T22141fc.hs
-                  typecheck/should_fail/T22141fd.hs
-                  typecheck/should_fail/T22141fe.hs
-                  typecheck/should_compile/T22141f.hs
-                  typecheck/should_compile/T22141g.hs
+                  typecheck/should_compile/tcfail094
+                  typecheck/should_compile/T22141a
+                  typecheck/should_compile/T22141b
+                  typecheck/should_compile/T22141c
+                  typecheck/should_compile/T22141d
+                  typecheck/should_compile/T22141e
+                  typecheck/should_compile/T22141f
+                  typecheck/should_compile/T22141g
+                  typecheck/should_fail/T20873c
+                  typecheck/should_fail/T20873d
   -}
   TcRnDataKindsError :: TypeOrKind -> Either (HsType GhcPs) Type -> TcRnMessage
 
