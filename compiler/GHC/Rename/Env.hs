@@ -108,6 +108,7 @@ import GHC.Types.PkgQual
 import GHC.Types.GREInfo
 
 import Control.Arrow    ( first )
+import Control.Applicative
 import Control.Monad
 import Data.Either      ( partitionEithers )
 import Data.Function    ( on )
@@ -1138,6 +1139,18 @@ lookup_promoted rdr_name
   | otherwise
   = return Nothing
 
+check_promoted_pun :: (LocalRdrEnv, GlobalRdrEnv) -> (RdrName, Name) -> IsPunnedVarOcc
+check_promoted_pun (lcl_env, gbl_env) (rdr_name, name) =
+  case mb_promoted_name of
+    Nothing    -> DistinctVarOcc
+    Just name' -> PunnedVarOcc name name'
+  where
+    mb_promoted_name =
+      do { promoted_rdr <- promoteRdrName rdr_name
+         ; let lcl = lookupLocalRdrEnv lcl_env promoted_rdr
+         ; let gbl = lookupGRE gbl_env (LookupRdrName promoted_rdr (RelevantGREsFOS WantNormal))
+         ; lcl <|> fmap gre_name (listToMaybe gbl) }
+
 badVarInType :: RdrName -> RnM Name
 badVarInType rdr_name
   = do { addErr (TcRnUnpromotableThing name TermVariablePE)
@@ -1261,15 +1274,15 @@ lookupExprOccRn rdr_name
                       lookupGlobalOccRn_overloaded
                       return
                       rdr_name
-       ; mb_promoted_name <- lookup_promoted rdr_name  -- See Note [Promotion]
-       ; return $ case (mb_name, mb_promoted_name) of
-           (Nothing, Nothing)      -> Nothing
-           (Just rdr_elt, Nothing) -> Just (DistinctVarOcc, rdr_elt)
-           (Nothing, Just rdr_elt) -> Just (DistinctVarOcc, rdr_elt)
-           (Just rdr_elt, Just rdr_elt') ->
-              let is_punned = PunnedVarOcc (gre_name rdr_elt) (gre_name rdr_elt')
-              in Just (is_punned, rdr_elt) }
-
+       ; case mb_name of
+           Nothing ->
+             do { mb_promoted_name <- lookup_promoted rdr_name    -- See Note [Promotion]
+                ; return $ fmap (DistinctVarOcc,) mb_promoted_name }
+           Just rdr_elt ->
+             do { lcl_env <- getLocalRdrEnv
+                ; gbl_env <- getGlobalRdrEnv
+                ; let is_punned = check_promoted_pun (lcl_env, gbl_env) (rdr_name, gre_name rdr_elt)
+                ; return $ Just (is_punned, rdr_elt) } }
 
 lookupGlobalOccRn_maybe :: WhichGREs GREInfo -> RdrName -> RnM (Maybe GlobalRdrElt)
 -- Looks up a RdrName occurrence in the top-level

@@ -713,7 +713,7 @@ data TcRnMessage where
     -> TcRnMessage
 
   {-| TcRnIllegalNamedWildcardInTypeArgument is an error that occurs
-      when a name wildcard is used in a required type argument.
+      when a named wildcard is used in a required type argument.
 
       Example:
 
@@ -749,6 +749,8 @@ data TcRnMessage where
      Example:
        vfun :: forall (a :: k) -> ()
        f (Just @a a) = vfun a
+       --                  ^^^
+       --  
   -}
   TcRnIllegalPunnedVarOccInTypeArgument
     :: Name
