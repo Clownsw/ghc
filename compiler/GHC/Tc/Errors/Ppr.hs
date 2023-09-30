@@ -2423,7 +2423,7 @@ instance Diagnostic TcRnMessage where
       -- in GHC.Tc.Validity.
       -> case thing of
            Left  _ -> ErrorWithoutFlag
-           Right _ -> WarningWithoutFlag
+           Right _ -> WarningWithFlag Opt_WarnDataKindsTC
     TcRnTypeSynonymCycle{}
       -> ErrorWithoutFlag
     TcRnZonkerMessage msg

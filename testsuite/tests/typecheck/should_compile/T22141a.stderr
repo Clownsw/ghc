@@ -1,5 +1,5 @@
 
-T22141a.hs:8:1: warning: [GHC-68567]
+T22141a.hs:8:1: warning: [GHC-68567] [-Wdata-kinds-tc (in -Wdefault)]
     • An occurrence of ‘GHC.Num.Natural.Natural’ in a kind requires DataKinds.
       Future versions of GHC will turn this warning into an error.
     • In the expansion of type synonym ‘Nat’
