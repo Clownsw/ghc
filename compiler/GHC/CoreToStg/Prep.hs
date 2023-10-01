@@ -677,9 +677,11 @@ cpePair top_lvl is_rec dmd is_unlifted env bndr rhs
                else warnPprTrace True "CorePrep: silly extra arguments:" (ppr bndr) $
                                -- Note [Silly extra arguments]
                     (do { v <- newVar (idType bndr)
-                        ; let float = mkFloat env topDmd False v rhs2
+                        ; let float@(Float (NonRec v' _) _ _) =
+                                mkFloat env topDmd False v rhs2
+                        -- v' has demand info and possibly evaldUnfolding
                         ; return ( snocFloat floats2 float
-                                 , cpeEtaExpand arity (Var v)) })
+                                 , cpeEtaExpand arity (Var v')) })
 
         -- Wrap floating ticks
        ; let (floats4, rhs4) = wrapTicks floats3 rhs3
@@ -1503,8 +1505,10 @@ cpeArg env dmd arg
          else do { v <- newVar arg_ty
                  -- See Note [Eta expansion of arguments in CorePrep]
                  ; let arg3 = cpeEtaExpandArg env arg2
-                       arg_float = mkFloat env dmd is_unlifted v arg3
-                 ; return (snocFloat floats2 arg_float, varToCoreExpr v) }
+                       arg_float@(Float (NonRec v' _) _ _) =
+                         mkFloat env dmd is_unlifted v arg3
+                       -- v' has demand info and possibly evaldUnfolding
+                 ; return (snocFloat floats2 arg_float, varToCoreExpr v') }
        }
 
 cpeEtaExpandArg :: CorePrepEnv -> CoreArg -> CoreArg
@@ -1937,12 +1941,11 @@ instance Outputable Floats where
 
 mkFloat :: CorePrepEnv -> Demand -> Bool -> Id -> CpeRhs -> FloatingBind
 mkFloat env dmd is_unlifted bndr rhs = -- pprTraceWith "mkFloat" ppr $
-  Float (NonRec bndr' rhs) bound info
+  Float (NonRec bndr2 rhs) bound info
   where
-    bndr' = setIdDemandInfo bndr dmd -- See Note [Pin demand info on floats]
     (bound,info)
-      | is_lifted, is_hnf        = (BoundVal, TopLvlFloatable)
-          -- is_lifted: We currently don't allow unlifted values at the
+      | is_hnf, is_boxed         = (BoundVal, TopLvlFloatable)
+          -- is_lifted: We currently don't allow unboxed values at the
           --            top-level or inside letrecs
           --            (but SG thinks that in principle, we should)
       | exprIsTickedString rhs   = (CaseBound, TopLvlFloatable)
@@ -1961,10 +1964,20 @@ mkFloat env dmd is_unlifted bndr rhs = -- pprTraceWith "mkFloat" ppr $
           -- And these float freely but can't be speculated, hence LetBound
 
     is_lifted   = not is_unlifted
+    is_boxed    = isBoxedType (idType bndr)
     is_hnf      = exprIsHNF rhs
     is_strict   = isStrUsedDmd dmd
     ok_for_spec = exprOkForSpecEval (not . is_rec_call) rhs
     is_rec_call = (`elemUnVarSet` cpe_rec_ids env)
+
+    bndr1 = bndr `setIdDemandInfo` dmd -- See Note [Pin demand info on floats]
+    bndr2
+      | is_hnf
+      -- Otherwise, exprIsHNF must be conservative when bndr occurs as a strict
+      -- field arg. Result: More allocation in $walexGetByte.
+      = bndr1 `setIdUnfolding` evaldUnfolding
+      | otherwise
+      = bndr1
 
 emptyFloats :: Floats
 emptyFloats = Floats nilOL nilOL nilOL
