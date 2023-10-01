@@ -232,7 +232,7 @@ mkLamCaseMatchGroup origin lam_variant (L l matches)
   = mkMatchGroup origin (L l $ map fixCtxt matches)
   where fixCtxt (L a match) = L a match{m_ctxt = LamAlt lam_variant}
 
-mkLocatedList :: Semigroup a
+mkLocatedList :: (Semigroup a, NoAnn an)
   => [GenLocated (SrcAnn a) e2] -> LocatedAn an [GenLocated (SrcAnn a) e2]
 mkLocatedList ms = case nonEmpty ms of
     Nothing -> noLocA []
