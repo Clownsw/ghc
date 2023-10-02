@@ -222,9 +222,16 @@ type instance XOverLabel     GhcTc = DataConCantHappen
 
 -- ---------------------------------------------------------------------
 
+-- | Is this variable occurrence punned, i.e. is there a variable with the same
+-- 'occNameFS' but a different 'occNameSpace' in the context?
+--
+-- This is used to reject punned variable occurrences when converting required
+-- type arguments from HsExpr to HsType (see the "T2T-Mapping" section of GHC Proposal #281).
 data IsPunnedVarOcc =
     DistinctVarOcc
-  | PunnedVarOcc Name Name
+  | PunnedVarOcc
+      Name  -- how the variable was actually resolved
+      Name  -- how it could have been resolved if we were to look in a different namespace
   deriving (Eq, Data)
 
 type instance XVar GhcPs = NoExtField
