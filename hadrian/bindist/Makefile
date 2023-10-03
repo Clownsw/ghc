@@ -235,12 +235,21 @@ install_man:
 
 export SHELL
 .PHONY: install_wrappers
-install_wrappers: install_bin_libdir
+install_wrappers: install_bin_libdir install_hsc2hs_wrapper
 	@echo "Installing wrapper scripts"
 	$(INSTALL_DIR) "$(DESTDIR)$(WrapperBinsDir)"
 	for p in `cd wrappers; $(FIND) . ! -type d`; do \
 	    mk/install_script.sh "$$p" "$(DESTDIR)/$(WrapperBinsDir)/$$p" "$(WrapperBinsDir)" "$(ActualBinsDir)" "$(ActualBinsDir)/$$p" "$(ActualLibsDir)" "$(docdir)" "$(includedir)"; \
 	done
+
+.PHONY: install_hsc2hs_wrapper
+install_hsc2hs_wrapper:
+	@echo "Installing hsc2hs wrapper"
+	echo 'HSC2HS_EXTRA="$(addprefix --cflag=,$(CONF_CC_OPTS_STAGE1)) $(addprefix --lflag=,$(CONF_GCC_LINKER_OPTS_STAGE1))"' >> hsc2hs-wrapper
+	$(INSTALL_DIR) "$(DESTDIR)$(bindir)"
+	$(INSTALL_SCRIPT) hsc2hs-wrapper "$(DESTDIR)$(bindir)/hsc2hs"
+	rm -f hsc2hs-wrapper
+
 
 PKG_CONFS = $(shell find "$(DESTDIR)$(ActualLibsDir)/package.conf.d" -name '*.conf' | sed "s:   :\0xxx\0:g")
 .PHONY: update_package_db
