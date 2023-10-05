@@ -34,6 +34,7 @@ Library
         , Data.Complex
         , Data.Fixed
         , Data.Foldable1
+        , Data.Functor.Compose
         , Data.STRef.Lazy
         , Foreign.Concurrent
         , Foreign.Ptr
@@ -79,7 +80,6 @@ Library
         , Data.Functor
         , Data.Functor.Classes
         , Data.Functor.Contravariant
-        , Data.Functor.Compose
         , Data.Functor.Const
         , Data.Functor.Identity
         , Data.Functor.Product
