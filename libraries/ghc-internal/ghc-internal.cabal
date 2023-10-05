@@ -160,7 +160,6 @@ Library
         Foreign.Marshal.Alloc
         Foreign.Marshal.Array
         Foreign.Marshal.Safe
-        Foreign.Marshal.Unsafe
         Foreign.Marshal.Utils
         Foreign.Safe
         Foreign.StablePtr
