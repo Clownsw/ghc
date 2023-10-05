@@ -101,7 +101,6 @@ Library
         Control.Exception.Base
         Control.Monad
         Control.Monad.Fail
-        Control.Monad.Fix
         Control.Monad.Instances
         Control.Monad.IO.Class
         Control.Monad.ST
