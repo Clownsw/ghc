@@ -31,6 +31,7 @@ Library
         , Data.Array.Byte
         , Data.Bifoldable1
         , Data.Bitraversable
+        , Data.Complex
         , Data.Fixed
         , Data.Foldable1
         , Data.STRef.Lazy
@@ -68,7 +69,6 @@ Library
         , Data.Bool
         , Data.Char
         , Data.Coerce
-        , Data.Complex
         , Data.Data
         , Data.Dynamic
         , Data.Either
