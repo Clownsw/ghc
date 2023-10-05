@@ -19,7 +19,6 @@ import GHC.Toolchain (ccProgram, tgtCCompiler, ccLinkProgram, tgtCCompilerLink)
 import GHC.Toolchain.Program (prgFlags)
 import qualified Data.Set as Set
 import Oracles.Flavour
-import Debug.Trace
 
 {-
 Note [Binary distributions]

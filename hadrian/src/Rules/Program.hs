@@ -8,7 +8,6 @@ import Hadrian.Haskell.Cabal.Type
 import Base
 import Context
 import Expression hiding (stage, way)
-import Oracles.Flag
 import Oracles.ModuleFiles
 import Oracles.Setting (topDirectory)
 import Packages
