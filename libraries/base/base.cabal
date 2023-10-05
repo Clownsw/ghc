@@ -46,6 +46,7 @@ Library
         , Data.STRef.Lazy
         , Foreign.Concurrent
         , Foreign.Ptr
+        , Text.Printf
         , System.Console.GetOpt
         , System.IO.Unsafe
         , System.Info
@@ -249,7 +250,6 @@ Library
         , System.Posix.Types
         , Text.ParserCombinators.ReadP
         , Text.ParserCombinators.ReadPrec
-        , Text.Printf
         , Text.Read
         , Text.Read.Lex
         , Text.Show
