@@ -138,7 +138,6 @@ Library
         Data.Monoid
         Data.Ord
         Data.Proxy
-        Data.Ratio
         Data.Semigroup
         Data.STRef
         Data.STRef.Strict

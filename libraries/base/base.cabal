@@ -36,6 +36,7 @@ Library
         , Data.Foldable1
         , Data.Functor.Compose
         , Data.Functor.Contravariant
+        , Data.Ratio
         , Data.STRef.Lazy
         , Foreign.Concurrent
         , Foreign.Ptr
@@ -94,7 +95,6 @@ Library
         , Data.Monoid
         , Data.Ord
         , Data.Proxy
-        , Data.Ratio
         , Data.Semigroup
         , Data.STRef
         , Data.STRef.Strict
