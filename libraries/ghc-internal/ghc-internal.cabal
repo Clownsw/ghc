@@ -167,7 +167,6 @@ Library
         Foreign.C.Error
         Foreign.C.String
         Foreign.C.Types
-        Foreign.Concurrent
         Foreign.ForeignPtr
         Foreign.ForeignPtr.Safe
         Foreign.ForeignPtr.Unsafe

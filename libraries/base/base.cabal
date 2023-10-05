@@ -31,6 +31,7 @@ Library
         , Data.Bifoldable1
         , Data.Bitraversable
         , Data.STRef.Lazy
+        , Foreign.Concurrent
         , System.Console.GetOpt
         , System.IO.Unsafe
         , System.Info
@@ -115,7 +116,6 @@ Library
         , Foreign.C.Error
         , Foreign.C.String
         , Foreign.C.Types
-        , Foreign.Concurrent
         , Foreign.ForeignPtr
         , Foreign.ForeignPtr.Safe
         , Foreign.ForeignPtr.Unsafe
