@@ -23,6 +23,9 @@ Library
     other-modules:
           Dummy
 
+    exposed-modules:
+          System.IO.Unsafe
+
     reexported-modules:
           Control.Applicative
         , Control.Arrow
@@ -238,7 +241,6 @@ Library
         , System.Exit
         , System.IO
         , System.IO.Error
-        , System.IO.Unsafe
         , System.Info
         , System.Mem
         , System.Mem.StableName
