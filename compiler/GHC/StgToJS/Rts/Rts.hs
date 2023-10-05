@@ -110,7 +110,7 @@ closureConstructors s = BlockStat
     checkC :: JStat
     checkC | csAssertRts s =
       jVar $ \msg ->
-      jwhenS (var "arguments" .! 0 .!==. jString "h$baseZCGHCziJSziPrimziJSVal_con_e")
+      jwhenS (var "arguments" .! 0 .!==. jString "h$ghczminternalZCGHCziJSziPrimziJSVal_con_e")
                                   (loop 1 (.<. var "arguments" .^ "length")
                                           (\i ->
                                              mconcat [msg |= jString "warning: undefined or null in argument: "
@@ -209,7 +209,7 @@ bhLneStats _s p frameSize =
                     , ifS v
                       ((sp |= sp - frameSize)
                        <> ifS (v .===. var "h$blackhole")
-                                (returnS $ app "h$throw" [var "h$baseZCControlziExceptionziBasezinonTermination", false_])
+                                (returnS $ app "h$throw" [var "h$ghczminternalZCControlziExceptionziBasezinonTermination", false_])
                                 (mconcat [r1 |= v
                                          , sp |= sp - frameSize
                                          , returnStack
@@ -478,8 +478,8 @@ rts' s =
                                   , returnS (var "h$ap_1_0")
                                   ]
           , closure (ClosureInfo (TxtI "h$flushStdout_e") (CIRegs 0 []) "flushStdout" (CILayoutFixed 0 []) CIThunk mempty)
-                        $ mconcat [ r1 |= var "h$baseZCGHCziIOziHandlezihFlush"
-                                  , r2 |= var "h$baseZCGHCziIOziHandleziFDzistdout"
+                        $ mconcat [ r1 |= var "h$ghczminternalZCGHCziIOziHandlezihFlush"
+                                  , r2 |= var "h$ghczminternalZCGHCziIOziHandleziFDzistdout"
                                   , returnS (app "h$ap_1_1_fast" [])
                                   ]
           , TxtI "h$flushStdout" ||= app "h$static_thunk" [var "h$flushStdout_e"]

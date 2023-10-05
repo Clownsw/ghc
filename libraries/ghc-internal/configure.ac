@@ -1,5 +1,5 @@
 AC_PREREQ([2.60])
-AC_INIT([Haskell base package], [1.0], [libraries@haskell.org], [base])
+AC_INIT([Haskell ghc-internal package], [1.0], [libraries@haskell.org], [ghc-internal])
 
 # Safety check: Ensure that we are in the correct source directory.
 AC_CONFIG_SRCDIR([include/HsBase.h])
@@ -299,6 +299,6 @@ AC_CHECK_TYPE([struct MD5Context], [], [AC_MSG_ERROR([internal error])], [#inclu
 AC_CHECK_SIZEOF([struct MD5Context], [], [#include "include/md5.h"])
 
 AC_SUBST(EXTRA_LIBS)
-AC_CONFIG_FILES([base.buildinfo])
+AC_CONFIG_FILES([ghc-internal.buildinfo])
 
 AC_OUTPUT
