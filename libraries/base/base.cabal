@@ -36,6 +36,7 @@ Library
         , Data.Foldable1
         , Data.Functor.Compose
         , Data.Functor.Contravariant
+        , Data.List
         , Data.Ratio
         , Data.STRef.Lazy
         , Foreign.Concurrent
@@ -89,8 +90,6 @@ Library
         , Data.Int
         , Data.Ix
         , Data.Kind
-        , Data.List
-        , Data.List.NonEmpty
         , Data.Maybe
         , Data.Monoid
         , Data.Ord
