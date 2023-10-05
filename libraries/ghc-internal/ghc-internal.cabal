@@ -304,7 +304,6 @@ Library
         System.Exit
         System.IO
         System.IO.Error
-        System.Info
         System.Mem
         System.Mem.StableName
         System.Mem.Weak
