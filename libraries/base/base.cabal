@@ -24,7 +24,8 @@ Library
           Dummy
 
     exposed-modules:
-          Data.Bitraversable
+          Data.Bifoldable1
+        , Data.Bitraversable
         , Data.STRef.Lazy
         , System.Console.GetOpt
         , System.IO.Unsafe
@@ -57,7 +58,6 @@ Library
         , Control.Monad.Zip
         , Data.Array.Byte
         , Data.Bifoldable
-        , Data.Bifoldable1
         , Data.Bifunctor
         , Data.Bits
         , Data.Bool

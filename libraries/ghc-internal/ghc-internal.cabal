@@ -115,7 +115,6 @@ Library
         Control.Monad.Zip
         Data.Array.Byte
         Data.Bifoldable
-        Data.Bifoldable1
         Data.Bifunctor
         Data.Bits
         Data.Bool
