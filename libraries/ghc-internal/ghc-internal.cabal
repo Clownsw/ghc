@@ -122,7 +122,6 @@ Library
         Data.Eq
         Data.Enum
         Data.Foldable
-        Data.Foldable1
         Data.Function
         Data.Functor
         Data.Functor.Classes

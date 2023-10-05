@@ -32,6 +32,7 @@ Library
         , Data.Bifoldable1
         , Data.Bitraversable
         , Data.Fixed
+        , Data.Foldable1
         , Data.STRef.Lazy
         , Foreign.Concurrent
         , Foreign.Ptr
@@ -74,7 +75,6 @@ Library
         , Data.Eq
         , Data.Enum
         , Data.Foldable
-        , Data.Foldable1
         , Data.Function
         , Data.Functor
         , Data.Functor.Classes
