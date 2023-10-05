@@ -45,6 +45,7 @@ Library
         , Data.Ratio
         , Data.STRef.Lazy
         , Foreign.Concurrent
+        , Foreign.Marshal.Error
         , Foreign.Marshal.Pool
         , Foreign.Ptr
         , Text.Printf
@@ -124,7 +125,6 @@ Library
         , Foreign.Marshal
         , Foreign.Marshal.Alloc
         , Foreign.Marshal.Array
-        , Foreign.Marshal.Error
         , Foreign.Marshal.Safe
         , Foreign.Marshal.Unsafe
         , Foreign.Marshal.Utils
