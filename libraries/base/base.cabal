@@ -24,7 +24,8 @@ Library
           Dummy
 
     exposed-modules:
-          Data.Bifoldable1
+          Control.Applicative
+        , Data.Bifoldable1
         , Data.Bitraversable
         , Data.STRef.Lazy
         , System.Console.GetOpt
@@ -34,7 +35,6 @@ Library
         , System.Timeout
 
     reexported-modules:
-          Control.Applicative
         , Control.Arrow
         , Control.Category
         , Control.Concurrent
