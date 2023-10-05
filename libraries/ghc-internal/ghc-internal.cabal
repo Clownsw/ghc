@@ -297,7 +297,6 @@ Library
         Numeric.Natural
         Prelude
         System.CPUTime
-        System.Console.GetOpt
         System.Environment
         System.Environment.Blank
         System.Exit

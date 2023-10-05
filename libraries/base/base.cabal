@@ -25,6 +25,7 @@ Library
 
     exposed-modules:
           Data.STRef.Lazy
+        , System.Console.GetOpt
         , System.IO.Unsafe
         , System.Info
 
@@ -236,7 +237,6 @@ Library
         , Numeric.Natural
         , Prelude
         , System.CPUTime
-        , System.Console.GetOpt
         , System.Environment
         , System.Environment.Blank
         , System.Exit
