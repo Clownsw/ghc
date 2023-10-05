@@ -42,6 +42,7 @@ Library
         , Data.Functor.Compose
         , Data.Functor.Contravariant
         , Data.List
+        , Data.List.NonEmpty
         , Data.Ratio
         , Data.STRef.Lazy
         , Foreign.Concurrent
