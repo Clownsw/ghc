@@ -93,7 +93,6 @@ Library
         Control.Arrow
         Control.Category
         Control.Concurrent
-        Control.Concurrent.Chan
         Control.Concurrent.MVar
         Control.Exception
         Control.Exception.Base

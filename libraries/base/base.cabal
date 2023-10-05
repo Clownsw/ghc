@@ -25,6 +25,7 @@ Library
 
     exposed-modules:
           Control.Applicative
+        , Control.Concurrent.Chan
         , Control.Concurrent.QSem
         , Control.Concurrent.QSemN
         , Control.Monad.Fix
@@ -55,7 +56,6 @@ Library
         , Control.Arrow
         , Control.Category
         , Control.Concurrent
-        , Control.Concurrent.Chan
         , Control.Concurrent.MVar
         , Control.Exception
         , Control.Exception.Base
