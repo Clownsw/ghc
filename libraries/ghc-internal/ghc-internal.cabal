@@ -95,7 +95,6 @@ Library
         Control.Concurrent
         Control.Concurrent.Chan
         Control.Concurrent.MVar
-        Control.Concurrent.QSem
         Control.Exception
         Control.Exception.Base
         Control.Monad
