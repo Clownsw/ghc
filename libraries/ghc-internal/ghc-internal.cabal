@@ -113,7 +113,6 @@ Library
         Data.Bifunctor
         Data.Bits
         Data.Bool
-        Data.Char
         Data.Coerce
         Data.Data
         Data.Dynamic
