@@ -31,6 +31,7 @@ Library
         , System.IO.Unsafe
         , System.Info
         , System.Mem.Weak
+        , System.Timeout
 
     reexported-modules:
           Control.Applicative
@@ -247,7 +248,6 @@ Library
         , System.Mem.StableName
         , System.Posix.Internals
         , System.Posix.Types
-        , System.Timeout
         , Text.ParserCombinators.ReadP
         , Text.ParserCombinators.ReadPrec
         , Text.Printf
