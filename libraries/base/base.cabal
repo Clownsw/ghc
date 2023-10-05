@@ -32,6 +32,7 @@ Library
         , Data.Bitraversable
         , Data.STRef.Lazy
         , Foreign.Concurrent
+        , Foreign.Ptr
         , System.Console.GetOpt
         , System.IO.Unsafe
         , System.Info
@@ -127,7 +128,6 @@ Library
         , Foreign.Marshal.Safe
         , Foreign.Marshal.Unsafe
         , Foreign.Marshal.Utils
-        , Foreign.Ptr
         , Foreign.Safe
         , Foreign.StablePtr
         , Foreign.Storable

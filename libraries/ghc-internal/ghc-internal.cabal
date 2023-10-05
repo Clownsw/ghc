@@ -178,7 +178,6 @@ Library
         Foreign.Marshal.Safe
         Foreign.Marshal.Unsafe
         Foreign.Marshal.Utils
-        Foreign.Ptr
         Foreign.Safe
         Foreign.StablePtr
         Foreign.Storable
