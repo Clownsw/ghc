@@ -110,7 +110,6 @@ Library
         Control.Monad.ST.Safe
         Control.Monad.ST.Strict
         Control.Monad.ST.Unsafe
-        Control.Monad.Zip
         Data.Array.Byte
         Data.Bifoldable
         Data.Bifunctor
