@@ -24,7 +24,8 @@ Library
           Dummy
 
     exposed-modules:
-          System.IO.Unsafe
+          Data.STRef.Lazy
+        , System.IO.Unsafe
         , System.Info
 
     reexported-modules:
@@ -91,7 +92,6 @@ Library
         , Data.Ratio
         , Data.Semigroup
         , Data.STRef
-        , Data.STRef.Lazy
         , Data.STRef.Strict
         , Data.String
         , Data.Traversable

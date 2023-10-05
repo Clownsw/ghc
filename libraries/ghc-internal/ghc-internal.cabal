@@ -153,7 +153,6 @@ Library
         Data.Ratio
         Data.Semigroup
         Data.STRef
-        Data.STRef.Lazy
         Data.STRef.Strict
         Data.String
         Data.Traversable
