@@ -121,7 +121,6 @@ Library
         Data.Either
         Data.Eq
         Data.Enum
-        Data.Fixed
         Data.Foldable
         Data.Foldable1
         Data.Function
