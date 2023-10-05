@@ -304,7 +304,6 @@ Library
         System.IO.Error
         System.Mem
         System.Mem.StableName
-        System.Mem.Weak
         System.Posix.Internals
         System.Posix.Types
         System.Timeout
