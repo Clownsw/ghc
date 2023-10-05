@@ -111,7 +111,6 @@ Library
         Control.Monad.ST.Unsafe
         Data.Bifoldable
         Data.Bifunctor
-        Data.Bits
         Data.Bool
         Data.Coerce
         Data.Data
