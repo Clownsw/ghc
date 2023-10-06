@@ -21,6 +21,8 @@ dnl * Deal with arguments telling us gmp is somewhere odd
 dnl--------------------------------------------------------------------
 
 dnl Various things from the source distribution configure
+bootstrap_build=@BuildPlatform@
+bootstrap_host=@HostPlatform@
 bootstrap_target=@TargetPlatform@
 
 bootstrap_llvm_target=@LlvmTarget@
