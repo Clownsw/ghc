@@ -490,7 +490,6 @@ function build_hadrian() {
     export XZ_OPT="${XZ_OPT:-} -T$cores"
   fi
 
-  echo "CROSS_STAGE: $CROSS_STAGE"
   case "${CROSS_STAGE:-2}" in
     2) BINDIST_TARGET="binary-dist";;
     3) BINDIST_TARGET="binary-dist-stage3";;
